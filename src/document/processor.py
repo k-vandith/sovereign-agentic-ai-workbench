@@ -7,7 +7,6 @@ from typing import Iterator
 
 from pypdf import PdfReader
 from docx import Document as DocxDocument
-from PIL import Image
 
 logger = logging.getLogger(__name__)
 

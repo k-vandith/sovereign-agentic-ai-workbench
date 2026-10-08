@@ -171,6 +171,12 @@ class RAGAgent:
     def get_conversation(self, conversation_id: str) -> Conversation | None:
         return self.conversations.get(conversation_id)
 
+    def clear_knowledge_base(self) -> None:
+        """Drop indexed chunks. Requires ingest permission."""
+        require(self.principal, "ingest")
+        self.store.clear()
+        self.audit.record("clear_kb", user=self.principal.name)
+
     def view_audit(self, limit: int = 50) -> list[dict[str, Any]]:
         require(self.principal, "view_audit")
         return self.audit.recent(limit=limit)

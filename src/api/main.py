@@ -3,14 +3,14 @@ from __future__ import annotations
 
 import logging
 import shutil
-from pathlib import Path
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Query
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from src.config import get_settings
 from src.agent import RAGAgent
+from src.paths import safe_filename
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -58,7 +58,10 @@ def health():
 async def ingest(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(400, "No filename provided")
-    dest = settings.upload_dir / file.filename
+    try:
+        dest = settings.upload_dir / safe_filename(file.filename)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
     try:
         with dest.open("wb") as f:
             shutil.copyfileobj(file.file, f)

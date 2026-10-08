@@ -30,22 +30,44 @@ The workbench lets operators:
 
 ## Architecture
 
+```mermaid
+flowchart LR
+  UI[Streamlit workspace] --> Agent[RAG agent]
+  API[FastAPI] --> Agent
+  Agent --> LLM[Demo or local Ollama]
+  Agent --> Tools[Calculator search summarise image]
+  Agent --> Audit[Audit log]
+  Agent --> Store[FAISS or numpy]
+  Store --> Docs[Document processor]
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Streamlit  │────▶│  RAG Agent   │────▶│  LLM Layer  │
-│     UI      │     │              │     │ Demo/Ollama │
-└─────────────┘     └──────┬───────┘     └─────────────┘
-                           │
-┌─────────────┐     ┌──────▼───────┐     ┌─────────────┐
-│   FastAPI   │────▶│  Retrieval   │────▶│  FAISS /    │
-│             │     │  (Vector KB) │     │  numpy      │
-└─────────────┘     └──────┬───────┘     └─────────────┘
-                           │
-                    ┌──────▼───────┐
-                    │  Document    │
-                    │  Processing  │
-                    └──────────────┘
+
+Embedding weights load once per process and stay cached. The demo backend does not call the network.
+
+## Run
+
+```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+python scripts/generate_demo_data.py
+python run.py
 ```
+
+API: `python run.py --api` then `GET http://127.0.0.1:8000/health`.
+
+UI alternative: `streamlit run app.py`.
+
+## Performance
+
+- Embeddings are lazy and reused; they are not reloaded on each question.
+- The FAISS index rebuilds on ingest, not on search.
+- Demo answers are template-based and start without a model download.
+- The first real embedding run downloads `all-MiniLM-L6-v2` into the Hugging Face cache. Later runs reuse that cache. No GPU is required.
+
+## Security
+
+Uploads are reduced to a single filename. Offline mode refuses remote OpenAI-compatible backends. Do not commit `.env`.
 
 ## Tech Stack
 
@@ -185,7 +207,7 @@ streamlit run src/ui/app.py
 ### FastAPI backend
 
 ```bash
-uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn src.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ## Testing

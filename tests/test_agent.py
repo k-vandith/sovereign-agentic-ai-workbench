@@ -7,7 +7,7 @@ import pytest
 
 from src.agent import RAGAgent
 from src.llm import DemoLLM
-from src.retrieval import LocalVectorStore, DocumentChunk
+from src.retrieval import LocalVectorStore
 
 
 @pytest.fixture

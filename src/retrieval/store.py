@@ -82,7 +82,6 @@ class LocalVectorStore:
             return []
         q_emb = self._embed([query])[0]
         if self._use_faiss and self._index is not None:
-            import faiss
 
             scores, indices = self._index.search(
                 q_emb.reshape(1, -1).astype(np.float32), min(top_k, len(self._chunks))
