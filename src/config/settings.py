@@ -43,13 +43,17 @@ class Settings(BaseSettings):
 
     log_level: str = "INFO"
 
+    offline_mode: bool = True
+    ollama_vision_model: str = "llava"
+    default_role: str = "operator"
+
     def ensure_dirs(self) -> None:
-        """Create required directories if they do not exist."""
         for d in (
             self.data_dir,
             self.upload_dir,
             self.vectorstore_dir,
             self.conversation_dir,
+            self.data_dir / "audit",
         ):
             d.mkdir(parents=True, exist_ok=True)
 
@@ -58,7 +62,6 @@ _settings: Settings | None = None
 
 
 def get_settings() -> Settings:
-    """Return singleton settings instance."""
     global _settings
     if _settings is None:
         _settings = Settings()
