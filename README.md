@@ -67,19 +67,20 @@ sovereign-agentic-ai-workbench/
 ├── .gitignore
 ├── .env.example
 ├── src/
-│   ├── config/          # Settings
-│   ├── document/        # Extraction & chunking
-│   ├── retrieval/       # Vector store
-│   ├── llm/             # Model backends
-│   ├── agent/           # RAG agent
-│   ├── api/             # FastAPI app
-│   └── ui/              # Streamlit app
+│   ├── config/
+│   ├── document/
+│   ├── retrieval/
+│   ├── llm/
+│   ├── agent/
+│   ├── api/
+│   └── ui/
 ├── tests/
-├── data/
-│   └── sample/
+├── data/sample/
 ├── scripts/
+│   ├── setup_env.py
+│   ├── setup.sh
+│   ├── setup.ps1
 │   └── generate_demo_data.py
-├── models/
 └── docs/
 ```
 
@@ -95,27 +96,67 @@ First run of sentence-transformers downloads ~90 MB model weights (cached afterw
 
 ## Installation
 
-### Windows (PowerShell)
+### Recommended (all platforms) — automated bootstrap
 
-```powershell
-git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
-cd sovereign-agentic-ai-workbench
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-copy .env.example .env
-```
-
-### Linux / macOS
+Handles missing `ensurepip`, symlink restrictions, and installs dependencies into `.venv`:
 
 ```bash
 git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
 cd sovereign-agentic-ai-workbench
-python3 -m venv .venv
+python3 scripts/setup_env.py    # or:  python scripts/setup_env.py
+```
+
+Then activate:
+
+```bash
+# Linux / macOS
 source .venv/bin/activate
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+Copy environment file:
+
+```bash
+# Linux / macOS
+cp .env.example .env
+
+# Windows
+copy .env.example .env
+```
+
+### Manual setup
+
+#### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
+cd sovereign-agentic-ai-workbench
+python -m venv .venv --copies
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+copy .env.example .env
+```
+
+#### Linux / macOS
+
+```bash
+git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
+cd sovereign-agentic-ai-workbench
+# If `python3 -m venv` fails with ensurepip errors:
+#   sudo apt install python3-venv python3-pip   # Debian/Ubuntu
+python3 -m venv .venv --copies
+source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 cp .env.example .env
 ```
+
+### Why `--copies`?
+
+Some environments (restricted sandboxes, certain CI images) cannot create symlinks inside a venv (`Operation not permitted` on `lib64 → lib`). Using `--copies` avoids that. `scripts/setup_env.py` tries `--copies` first automatically.
 
 ## Environment Variables
 
@@ -133,47 +174,18 @@ See `.env.example`. Important keys:
 python scripts/generate_demo_data.py
 ```
 
-This writes three synthetic industrial documents into `data/sample/`. Upload them via the UI or API.
-
 ## Running the Application
 
-### Streamlit UI (recommended for demos)
+### Streamlit UI
 
 ```bash
 streamlit run src/ui/app.py
 ```
 
-Open http://localhost:8501
-
 ### FastAPI backend
 
 ```bash
 uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-API docs: http://localhost:8000/docs
-
-### Optional: Ollama
-
-```bash
-# Install Ollama from https://ollama.com then:
-ollama pull llama3.2:1b
-# Set LLM_BACKEND=ollama in .env and restart
-```
-
-## API Usage
-
-```bash
-# Health
-curl http://localhost:8000/health
-
-# Ingest
-curl -X POST -F "file=@data/sample/safety_protocol.txt" http://localhost:8000/ingest
-
-# Query
-curl -X POST http://localhost:8000/query \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What is the max temperature for Reactor R-12?"}'
 ```
 
 ## Testing
@@ -190,6 +202,10 @@ pytest -v
 | Embedding model download slow | First run caches under `~/.cache/huggingface` |
 | Ollama connection refused | Start `ollama serve` and confirm `OLLAMA_BASE_URL` |
 | FAISS install fails on some platforms | Code falls back to pure-numpy cosine search automatically |
+| `venv` / ensurepip fails | Run `python3 scripts/setup_env.py` or install `python3-venv` (Debian/Ubuntu) |
+| `Operation not permitted` on lib64 | Use `python3 -m venv .venv --copies` (setup script does this) |
+| `ModuleNotFoundError: pydantic_settings` | Activate `.venv` and re-run `pip install -r requirements.txt` |
+| `ModuleNotFoundError: sentence_transformers` | Same — install from requirements inside the active venv |
 
 ## Limitations
 
@@ -197,22 +213,12 @@ pytest -v
 - Image support is registration-only (no OCR unless Tesseract is added separately).
 - Multimodal generation requires an Ollama vision model (e.g. `llava`) – not enabled by default.
 - Conversation history is in-memory by default (restarts clear it).
-- Not intended for production multi-user deployments without additional auth.
 
 ## Security / Privacy
 
 - No data leaves the machine unless you deliberately point at a remote OpenAI-compatible endpoint.
 - Uploaded files stay under `data/uploads/`.
-- `.env` and secrets are git-ignored.
 - Designed for air-gapped / confidential industrial networks.
-
-## Future Improvements
-
-- Persistent conversation store (SQLite)
-- Tool-calling agents (file search, calculator, internal APIs)
-- Optional Tesseract OCR path
-- Role-based access control
-- Streaming token responses
 
 ## License
 
