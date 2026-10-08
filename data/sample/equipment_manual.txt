@@ -1,0 +1,8 @@
+Equipment Manual – Pump Unit P-204
+
+Model: Centrifugal Industrial Pump Series X
+Operating pressure: 8–12 bar
+Flow rate: 120–180 m³/h
+Maintenance interval: every 2,000 operating hours
+Known issues: seal wear after 18 months under high-solids conditions.
+Spare parts list: mechanical seal kit (SKU-MS-204), impeller (SKU-IMP-204).

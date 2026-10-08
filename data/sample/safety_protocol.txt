@@ -1,0 +1,7 @@
+Industrial Safety Protocol – Confidential
+
+1. All personnel must wear PPE in Zone A and Zone B.
+2. Maximum allowable temperature for Reactor R-12 is 450°C.
+3. Emergency shutdown procedure: press red button panel, evacuate within 90 seconds.
+4. Chemical spill response: contain with absorbent, notify Safety Officer immediately.
+5. Last safety audit: 2025-11-15. Next due: 2026-05-15.
