@@ -27,6 +27,8 @@ jobs:
         run: ruff check src tests app.py run.py
       - name: Security scan
         run: bandit -q -r src -ll
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt --progress-spinner off
       - name: Run tests
         run: pytest -v
         env:

@@ -85,14 +85,14 @@ def main() -> None:
                 logger.exception("Ingest failed")
                 st.error("That file could not be indexed. Use PDF, DOCX, TXT, or MD.")
                 st.caption(str(exc))
-        if st.button("Load sample documents", use_container_width=True):
+        if st.button("Load sample documents", width="stretch"):
             sample = ROOT / "data" / "sample"
             if not sample.exists():
                 st.warning("Sample folder is missing. Run scripts/generate_demo_data.py")
             else:
                 summary = agent.ingest_directory(sample)
                 st.success(f"Processed {summary['files_processed']} files.")
-        if st.button("Clear knowledge base", use_container_width=True):
+        if st.button("Clear knowledge base", width="stretch"):
             agent.clear_knowledge_base()
             st.session_state.messages = []
             st.session_state.conversation_id = None
