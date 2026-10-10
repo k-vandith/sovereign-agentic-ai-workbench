@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 
-from src.retrieval import DocumentChunk, HybridVectorStore, calibrate_relevance_threshold
+from src.retrieval import DocumentChunk, HybridVectorStore, LocalVectorStore, calibrate_relevance_threshold
 
 
 def test_threshold_calibrator_separates_labelled_dev_scores():
@@ -91,8 +91,6 @@ def test_existing_hashed_index_is_reembedded_when_fastembed_becomes_available(
 
         def query_embed(self, queries):
             return iter(LocalVectorStore._hashed_text_embeddings(list(queries)))
-
-    from src.retrieval import LocalVectorStore
 
     monkeypatch.delenv("FASTEMBED_DISABLE", raising=False)
     monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=FakeTextEmbedding))
