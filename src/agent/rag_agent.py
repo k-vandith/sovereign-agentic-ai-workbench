@@ -15,7 +15,7 @@ from src.agent.tools import ToolRegistry, parse_tool_calls
 from src.config import get_settings
 from src.document import extract_text_from_file, chunk_text
 from src.llm import get_llm, BaseLLM
-from src.retrieval import DocumentChunk, LocalVectorStore
+from src.retrieval import DocumentChunk, HybridVectorStore, LocalVectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ class RAGAgent:
     ) -> None:
         settings = get_settings()
         self.settings = settings
-        self.store = vector_store or LocalVectorStore(
+        self.store = vector_store if vector_store is not None else HybridVectorStore(
             persist_dir=settings.vectorstore_dir,
             embedding_model_name=settings.embedding_model,
         )
@@ -188,7 +188,10 @@ class RAGAgent:
         if isinstance(top_k, bool) or not isinstance(top_k, int) or not 1 <= top_k <= 50:
             raise ValueError("top_k must be an integer between 1 and 50.")
         raw_hits = self.store.search(question, top_k=top_k)
-        threshold = float(self.settings.relevance_threshold)
+        configured_threshold = self.settings.relevance_threshold
+        if configured_threshold is None:
+            configured_threshold = getattr(self.store, "calibrated_threshold", None)
+        threshold = float(0.28 if configured_threshold is None else configured_threshold)
         hits = [(chunk, score) for chunk, score in raw_hits if float(score) > threshold]
         if not hits:
             answer = (

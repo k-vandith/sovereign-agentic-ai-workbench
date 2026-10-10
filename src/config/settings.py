@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     openai_compatible_api_key: str = ""
     openai_compatible_model: str = ""
 
-    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
 
     data_dir: Path = Path("data")
     upload_dir: Path = Path("data/uploads")
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     conversation_dir: Path = Path("data/conversations")
 
     top_k: int = Field(default=5, ge=1, le=50)
-    relevance_threshold: float = Field(default=0.15, ge=-1.0, le=1.0)
+    relevance_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
     conversation_history_tokens: int = Field(default=2000, ge=0, le=20000)
     chunk_size: int = Field(default=500, ge=1, le=10000)
     chunk_overlap: int = Field(default=50, ge=0, le=9999)

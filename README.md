@@ -81,7 +81,7 @@ With `OFFLINE_MODE=true`, Ollama endpoints must resolve to `localhost` or a loop
 
 Before starting the API with `python run.py --api`, create a local `.env` and set `API_TOKEN` to a unique random secret (generate one with `python -c "import secrets; print(secrets.token_urlsafe(32))"`). Send it as `Authorization: Bearer YOUR_TOKEN` for `POST /ingest`, `POST /query`, `DELETE /knowledge-base`, `GET /conversations`, `GET /conversations/{id}`, and `GET /stats`. These routes fail closed when `API_TOKEN` is missing. Requests with a browser `Origin` are accepted only from the configured local Streamlit origin; CORS alone is not relied on to block simple cross-origin form uploads. Keep the token private and do not commit `.env`.
 
-Retrieval only sends passages scoring strictly above `RELEVANCE_THRESHOLD` (default `0.15`) to the model. If none clear the threshold, the workbench returns an explicit not-found answer without making a model call. `CONVERSATION_HISTORY_TOKENS` (default `2000`) limits prior dialogue included in follow-up prompts; it uses a local tokenizer when available with a conservative fallback.
+Retrieval uses FastEmbed's small BGE ONNX model on CPU by default, combined with BM25 lexical scoring. If FastEmbed or its model cannot be loaded, hashed-text embeddings plus BM25 remain available without PyTorch. The relevance threshold is calibrated on a bundled labelled development set and cached per retrieval backend; set `RELEVANCE_THRESHOLD` only to override that calibrated value. Unknown equipment IDs (such as `V-999` or `P-999`) and unindexed named entities abstain before generation. If no passages clear the calibrated threshold, the workbench returns an explicit not-found answer without making a model call. `CONVERSATION_HISTORY_TOKENS` (default `2000`) limits prior dialogue included in follow-up prompts; it uses a local tokenizer when available with a conservative fallback.
 
 ## A simple workflow
 
@@ -111,7 +111,7 @@ Install from the repository root:
 - OCR: `python -m pip install -e ".[ocr]"`, then install the Tesseract executable separately.
 - Browser screenshots: `python -m pip install -e ".[screenshots]"`, then `python -m playwright install chromium`.
 
-The default retrieval index uses local CPU-friendly text hashing. Optional semantic embeddings may download transformer weights when enabled.
+The default retrieval index uses CPU-only ONNX semantic embeddings through FastEmbed (default model: `BAAI/bge-small-en-v1.5`) with BM25 hybrid ranking. The model is downloaded on first use; no PyTorch runtime is required. If FastEmbed or its model is unavailable, deterministic hashed-text embeddings plus BM25 are used instead. Run `PYTHONPATH=. python scripts/calibrate_retrieval_threshold.py` to print the current backend's threshold learned from the independent development examples.
 
 ## Tests and checks
 
@@ -121,6 +121,8 @@ ruff check src tests app.py run.py
 bandit -q -r src -ll
 pip-audit -r requirements.txt --progress-spinner off
 pytest -v
+PYTHONPATH=. python scripts/calibrate_retrieval_threshold.py
+PYTHONPATH=. python scripts/qa_retrieval_quality_harness.py
 ```
 
 ## Security and limitations
