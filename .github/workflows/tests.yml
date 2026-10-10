@@ -31,6 +31,9 @@ jobs:
         run: pip-audit -r requirements.txt --progress-spinner off
       - name: Retrieval QA harness
         run: PYTHONPATH=. python scripts/qa_retrieval_harness.py
+      - name: Retrieval quality baseline (report only while calibrating)
+        continue-on-error: true
+        run: PYTHONPATH=. python scripts/qa_retrieval_quality_harness.py
       - name: Run tests
         run: pytest -v
         env:
