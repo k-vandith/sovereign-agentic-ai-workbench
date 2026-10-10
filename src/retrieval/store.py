@@ -111,20 +111,21 @@ class LocalVectorStore:
         return self._model
 
     def embedding_status(self) -> str:
-        """Describe which local embedding mode is currently active."""
-        if self._semantic_status == "not checked":
-            if self._model is False:
-                return "Hashed-text retrieval (CPU)"
-            if self._model is not None:
+        """Describe the embedding mode used by the current local index."""
+        if self._embedding_mode == "hashed":
+            return "Hashed-text retrieval (CPU)"
+        if self._embedding_mode == "semantic":
+            if self._semantic_status == "active":
                 return "Semantic embeddings (CPU)"
-            try:
-                import importlib.util
-                if importlib.util.find_spec("sentence_transformers") is None:
-                    self._semantic_status = "not installed"
-            except (ImportError, ValueError):
-                self._semantic_status = "not installed"
-        if self._semantic_status == "active":
+            return "Semantic embeddings (CPU; model loads on first use)"
+        if self._model is not None and self._model is not False:
             return "Semantic embeddings (CPU)"
+        try:
+            import importlib.util
+            if importlib.util.find_spec("sentence_transformers") is not None:
+                return "Semantic embeddings available (CPU; not loaded)"
+        except (ImportError, ValueError):
+            pass
         return "Hashed-text retrieval (CPU)"
 
     def _embed(self, texts: list[str]) -> np.ndarray:
