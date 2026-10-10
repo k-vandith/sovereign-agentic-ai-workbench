@@ -3,9 +3,7 @@ from __future__ import annotations
 
 import html
 import json
-import importlib.util
 import logging
-import shutil
 from pathlib import Path
 
 import pandas as pd
@@ -15,20 +13,12 @@ from src.agent import RAGAgent
 from src.config import get_settings
 from src.document.io import build_answer_pdf, build_answer_report, build_sample_archive
 from src.document.uploads import ingest_uploaded_files
-from src.llm import DemoLLM, OllamaLLM
-from src.ui.components import brand_header, flow_steps, kpi, page_intro, section
+from src.llm import DemoLLM, OpenAICompatibleLLM
+from src.ui.components import brand_header, page_intro, section
 from src.ui.theme import get_css
 
 ROOT = Path(__file__).resolve().parents[2]
-PAGES = [
-    "Overview",
-    "Chat & Evidence",
-    "Document Library",
-    "Tool Trace",
-    "Audit Log",
-    "Settings & Glossary",
-]
-BACKENDS = ["Demo · offline", "Ollama · local model"]
+PAGES = ["Workspace", "Documents", "Settings"]
 UPLOAD_TYPES = [
     "pdf", "docx", "txt", "md", "csv", "json", "log",
     "png", "jpg", "jpeg", "webp", "bmp",
@@ -46,10 +36,9 @@ def _agent() -> RAGAgent:
 
 
 def _init_state(agent: RAGAgent) -> None:
-    default_backend = "Ollama · local model" if isinstance(agent.llm, OllamaLLM) else "Demo · offline"
-    st.session_state.setdefault("wb_page", "Overview")
-    st.session_state.setdefault("wb_theme", "Dark")
-    st.session_state.setdefault("wb_backend", default_backend)
+    st.session_state.setdefault("wb_page", "Workspace")
+    if st.session_state.get("wb_page") not in PAGES:
+        st.session_state["wb_page"] = "Workspace"
     st.session_state.setdefault("wb_messages", [])
     st.session_state.setdefault("wb_last_result", None)
     st.session_state.setdefault("wb_last_trace", [])
@@ -63,26 +52,17 @@ def _switch_page(page: str) -> None:
 
 
 def _go_documents() -> None:
-    _switch_page("Document Library")
+    _switch_page("Documents")
 
 
 def _go_chat() -> None:
-    _switch_page("Chat & Evidence")
+    _switch_page("Workspace")
 
 
 def _status_pills(agent: RAGAgent, model_available: bool) -> str:
-    backend = type(agent.llm).__name__
-    ready_label = "Ready" if model_available else "Not reachable"
-    readiness = "ok" if model_available else "warn"
-    mode = "Offline policy ON" if agent.settings.offline_mode else "Offline policy OFF"
-    return (
-        f'<span class="wb-pill {readiness}"><strong>{html.escape(ready_label)}</strong> '
-        f'{html.escape(backend)}</span>'
-        f'<span class="wb-pill"><strong>{html.escape(mode)}</strong></span>'
-        '<span class="wb-pill"><strong>CPU</strong> processing</span>'
-        f'<span class="wb-pill"><strong>{agent.store.count()}</strong> indexed chunks</span>'
-        f'<span class="wb-pill"><strong>{html.escape(agent.principal.role.value)}</strong> role</span>'
-    )
+    if isinstance(agent.llm, OpenAICompatibleLLM) and model_available:
+        return '<span class="wb-pill ok"><strong>API configured</strong></span>'
+    return '<span class="wb-pill"><strong>Preview mode</strong></span>'
 
 
 def _sample_summary(agent: RAGAgent) -> dict:
@@ -165,69 +145,33 @@ def _answer_downloads(result: dict) -> None:
 
 
 def _render_overview(agent: RAGAgent, model_available: bool) -> None:
-    page_intro(
-        "Overview",
-        "Ask questions about local manuals and procedures, inspect the source evidence, and keep a readable record of tool activity.",
-        "Start by loading the fictional sample pack or uploading your own files. Ask one concrete question. Open each source excerpt to inspect the evidence behind the answer.",
-    )
-    notice = st.session_state.pop("wb_sample_notice", None)
-    if notice:
-        st.success(notice)
+    sources = agent.store.list_sources()
     st.markdown(
-        '<div class="wb-hero"><div class="wb-eyebrow">PRIVATE KNOWLEDGE · LOCAL AI</div>'
-        '<h1>Ask your documents. Keep control of your data.</h1>'
-        '<p>A practical workbench for trainers, engineers and operational teams who need answers from confidential manuals, safety protocols and process notes without sending document content to a hosted AI service.</p>'
-        '<span class="wb-tag">Local-first workflow</span><span class="wb-tag">Demo or local Ollama</span>'
-        '<span class="wb-tag">Source excerpts included</span></div>',
+        '<div class="wb-simple-hero">'
+        '<div class="wb-kicker">SOVEREIGN WORKBENCH / PRIVATE KNOWLEDGE</div>'
+        '<h1>Answers with <em>receipts.</em></h1>'
+        '<p>Ask a question. Get a focused answer. Open the source passages that support it.</p>'
+        '</div>',
         unsafe_allow_html=True,
     )
-    flow_steps()
-    sources = agent.store.list_sources()
-    columns = st.columns(4)
-    with columns[0]:
-        kpi("Documents indexed", len(sources), "Distinct source files in the local index")
-    with columns[1]:
-        kpi("Text chunks", agent.store.count(), "Small passages used to find relevant evidence")
-    with columns[2]:
-        kpi("Model backend", "Demo" if isinstance(agent.llm, DemoLLM) else "Ollama", "Selected answer-generation mode")
-    with columns[3]:
-        kpi("Model status", "Ready" if model_available else "Unavailable", "Whether the selected backend can respond now")
-
-    left, right = st.columns([1.15, 1], gap="large")
+    left, right = st.columns([1.2, 1], gap="large")
     with left:
-        section("Who is this for?", "A guided starting point for people who need to find facts in local documents.")
-        st.markdown(
-            '<div class="wb-card"><div class="wb-card-title">Industrial trainers & students</div>'
-            '<div class="wb-card-copy">Explore procedures and learn how to trace an answer back to its source.</div></div>'
-            '<div class="wb-card"><div class="wb-card-title">Operators & engineers</div>'
-            '<div class="wb-card-copy">Find relevant operating limits, maintenance guidance and documented process notes.</div></div>'
-            '<div class="wb-card"><div class="wb-card-title">Privacy-conscious teams</div>'
-            '<div class="wb-card-copy">Keep source documents in a local folder and select Demo or a local Ollama model.</div></div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("#### Start with your documents")
+        st.caption("Use the fictional sample pack or index files from your own machine.")
+        if not sources:
+            _render_load_sample(agent, "wb_load_sample_home")
+            st.button("Add your documents", key="wb_add_docs_home", on_click=_go_documents, use_container_width=True)
+        else:
+            st.markdown(f"**{len(sources)} documents** · **{agent.store.count()} passages** ready to search")
+            st.button("Manage documents", key="wb_manage_docs_home", on_click=_go_documents, use_container_width=True)
     with right:
-        section("Start in two ways", "Choose a safe fictional pack or your own files.")
-        st.write("**1. Try with sample data**")
-        st.caption("The included pack contains fictional equipment, process and safety notes.")
-        _render_load_sample(agent, "wb_load_sample_overview")
-        st.divider()
-        st.write("**2. Upload your own data**")
-        st.caption("PDF, DOCX, TXT, Markdown, CSV, JSON and common image formats are accepted.")
-        st.button("Upload your own documents", key="wb_upload_cta", on_click=_go_documents, use_container_width=True)
-        st.button("Ask a question", key="wb_chat_cta", on_click=_go_chat, use_container_width=True)
-
-    if not sources:
-        st.info("Your local library is empty. Load the sample pack or add a document to begin.")
-    else:
-        section("Current library", "These source names and chunk counts describe what the local index can search.")
-        st.dataframe(
-            pd.DataFrame(sources)[["source", "chunks", "preview"]].rename(
-                columns={"source": "Document", "chunks": "Indexed passages", "preview": "Example excerpt"}
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
-        st.caption("The raw uploaded copy is cleaned up after ingestion; searchable text and embeddings remain in the local vector store.")
+        st.markdown("#### Better answers with an API")
+        st.caption("Connect an API provider in Settings for stronger, more useful answers. Preview mode is for trying the workflow.")
+        if not isinstance(agent.llm, OpenAICompatibleLLM):
+            st.button("Set up API", key="wb_setup_api_home", on_click=lambda: _switch_page("Settings"), type="primary", use_container_width=True)
+        else:
+            st.caption("API settings detected. Questions and relevant document passages are sent to your configured provider for answer generation.")
+    st.divider()
 
 
 def _render_documents(agent: RAGAgent) -> None:
@@ -341,39 +285,39 @@ def _render_documents(agent: RAGAgent) -> None:
 
 
 def _render_chat(agent: RAGAgent, model_available: bool) -> None:
-    page_intro(
-        "Chat & Evidence",
-        "Ask a specific question about the indexed documents and open the source excerpts that support the answer.",
-        "Questions are matched against local document passages. The selected model drafts the reply. Open the source evidence panels to check names, measurements and context against the excerpt.",
-    )
+    st.markdown('<div class="wb-chat-title"><div class="wb-kicker">ASK YOUR DOCUMENTS</div><h2>What do you need to know?</h2></div>', unsafe_allow_html=True)
     if not agent.store.count():
-        st.info("The library is empty. Load the fictional sample pack or upload documents first.")
-        st.button("Open document library", on_click=_go_documents, type="primary")
-    if not model_available:
-        st.warning("The selected model backend is not reachable. Choose Demo mode or start the local Ollama service, then recheck model status.")
+        st.info("Load the sample pack or add a document before asking a question.")
+    elif not isinstance(agent.llm, OpenAICompatibleLLM):
+        st.caption("Preview mode is limited. For better answers, configure an API in Settings.")
+    else:
+        st.caption("Answers use retrieved passages. Your question and relevant excerpts are sent to the configured API provider.")
     for message in st.session_state["wb_messages"]:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
-            for source in message.get("sources", [])[:8]:
+            for source in message.get("sources", [])[:6]:
                 _source_preview(source)
             trace = message.get("tool_trace", [])
             if trace:
                 with st.expander(f"Tool activity · {len(trace)} call(s)"):
                     for step in trace:
                         st.markdown(f"**{html.escape(str(step.get('tool', 'tool')))}** · {'OK' if step.get('ok') else 'Needs review'}")
-                        st.caption(str(step.get("output", ""))[:500])
-    prompt = st.chat_input("Ask about a safety limit, procedure, maintenance task or process note")
+                        st.caption(str(step.get("output", ""))[:400])
+    prompt = st.chat_input(
+        "Ask about a procedure, limit, maintenance task or note…",
+        disabled=not bool(agent.store.count()),
+    )
     if prompt:
         st.session_state["wb_messages"].append({"role": "user", "content": prompt})
         conversation_id = st.session_state.get("wb_conversation_id")
         try:
-            with st.spinner("Searching local passages and drafting an answer…"):
+            with st.spinner("Searching sources and preparing an answer…"):
                 result = agent.query(question=prompt, conversation_id=conversation_id)
         except Exception:
-            logger.exception("Local question answering failed")
+            logger.exception("Document question failed")
             st.session_state["wb_messages"].append({
                 "role": "assistant",
-                "content": "I could not complete this question. Check that documents are indexed and the selected backend is ready, then try a shorter question.",
+                "content": "I couldn't complete that question. Check your API setup and indexed sources, then try again.",
             })
         else:
             result["question"] = prompt
@@ -389,9 +333,8 @@ def _render_chat(agent: RAGAgent, model_available: bool) -> None:
         st.rerun()
     last_result = st.session_state.get("wb_last_result")
     if last_result:
-        section("Answer summary & report", "A compact record of the latest question, evidence and tool activity.")
-        _answer_downloads(last_result)
-    st.caption("Prompt ideas: What is the operating pressure? Summarise the safety protocol. Which maintenance interval is stated in the manual?")
+        with st.expander("Export the latest answer"):
+            _answer_downloads(last_result)
 
 
 def _render_tools(agent: RAGAgent) -> None:
@@ -490,72 +433,44 @@ def _render_audit(agent: RAGAgent) -> None:
 
 
 def _render_settings(agent: RAGAgent, model_available: bool) -> None:
-    page_intro(
-        "Settings & Glossary",
-        "Understand which local capabilities are active, how the selected backend works, and what the workbench's technical terms mean.",
-        "Use Demo for an immediate no-model service test or Ollama for local open-weight generation. Embedding weights may need to be downloaded the first time they are used; document content and prompts are processed by this local app.",
+    st.markdown("## Settings")
+    st.markdown("### Answer quality")
+    if isinstance(agent.llm, OpenAICompatibleLLM) and model_available:
+        st.success("API configuration detected. The app will use it to generate answers from relevant document passages.")
+    else:
+        st.info("Recommended: connect an API provider for better answers. Preview mode lets you test uploads, search and source excerpts but is not a full reasoning model.")
+    st.markdown("Create a local `.env` file in the project root, add your provider details, and restart the app.")
+    st.code(
+        "LLM_BACKEND=openai_compatible\n"
+        "OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com\n"
+        "OPENAI_COMPATIBLE_API_KEY=your_api_key_here\n"
+        "OPENAI_COMPATIBLE_MODEL=your_model_name\n"
+        "OFFLINE_MODE=false",
+        language="dotenv",
     )
-    section("Runtime configuration", "Visible settings and backend readiness for this application session.")
-    cols = st.columns(3)
-    with cols[0]:
-        kpi("Backend", "Demo" if isinstance(agent.llm, DemoLLM) else "Ollama", "Answers use the selected generator")
-    with cols[1]:
-        kpi("Offline policy", "On" if agent.settings.offline_mode else "Off", "The environment setting for network policy")
-    with cols[2]:
-        kpi("Current role", agent.principal.role.value, "Core permissions applied to actions")
-    if isinstance(agent.llm, OllamaLLM) and not model_available:
-        st.warning("Ollama is not reachable at the configured local URL. Start Ollama, pull the configured model, and use Recheck model status in the sidebar.")
-        st.code("ollama pull llama3.2:1b", language="bash")
-    if isinstance(agent.llm, DemoLLM):
-        st.info("Demo mode returns a template-based response that can quote retrieved local passages. Select Ollama for a real local language model.")
-    with st.expander("How to change the configured model"):
-        st.write("The sidebar backend selector switches this process between Demo and the local Ollama client. To change the default after restart, set LLM_BACKEND in .env. The UI intentionally does not expose paid API credentials.")
-        st.code("LLM_BACKEND=demo\n# or\nLLM_BACKEND=ollama\nOLLAMA_MODEL=llama3.2:1b", language="dotenv")
-
-    section("Optional capability status", "Some features need extra packages or local system tools. Missing features are described rather than silently substituted.")
-    semantic_active = agent.store.embedding_status().startswith("Semantic embeddings (CPU)")
-    capabilities = [
-        ("Hashed-text retrieval (CPU)", True, "Default mode. Uses deterministic local word/bigram features and requires no model download."),
-        ("Semantic embeddings (CPU)", semantic_active, "Optional: first install PyTorch from the CPU-only wheel index, then run pip install -e '.[embeddings]'. Cache model weights before using in a disconnected environment."),
-        ("FAISS vector index", importlib.util.find_spec("faiss") is not None, "When unavailable, the vector store uses its NumPy cosine-similarity fallback."),
-        ("PDF answer reports", importlib.util.find_spec("reportlab") is not None, "Enable with pip install -e '.[reports]' from the repository root."),
-        ("Image OCR", importlib.util.find_spec("pytesseract") is not None and shutil.which("tesseract") is not None, "Not active by default. Install Tesseract OCR and the optional OCR extra to extract text from image files."),
-        ("Ollama local generation", isinstance(agent.llm, OllamaLLM) and model_available, "Install Ollama locally, pull the configured model, then select it from the sidebar."),
-    ]
-    st.dataframe(
-        pd.DataFrame([{
-            "Capability": name,
-            "Status": "Active" if active else "Optional / not active",
-            "What it means / how to enable": description,
-        } for name, active, description in capabilities]),
-        use_container_width=True,
-        hide_index=True,
-    )
-    st.caption("Images are currently registered as metadata only. OCR and visual interpretation are not implied by a successful image upload.")
-    section("Plain-English glossary", "Short definitions for the terms used throughout the workbench.")
-    glossary = {
-        "RAG (retrieval-augmented generation)": "The app finds related text passages first, then gives those passages to the language model as context.",
-        "Chunk / passage": "A short piece of a document that can be matched against a question.",
-        "Embedding": "A numeric representation of text used to compare its meaning with a question.",
-        "Vector store": "The local index that keeps document passages and their numeric representations for search.",
-        "Citation / source excerpt": "A file name and passage retrieved as evidence relevant to an answer; always verify it against the original.",
-        "Tool trace": "A record of utility calls, their inputs, outputs and success status during a query.",
-        "Audit trail": "A local log of ingestion, question, answer and tool events.",
-        "Ollama": "A local runtime for running compatible open-weight language models on your own machine.",
-        "Demo backend": "A lightweight template-based generator for trying the workflow without a language model service.",
-        "RBAC (role-based access control)": "Core permissions that limit selected actions based on the configured local role.",
-        "OCR (optical character recognition)": "Software that attempts to extract text from pixels in an image or scanned page.",
-        "Offline mode": "A configuration flag intended to signal a no-remote-service policy; verify the runtime and model downloads before using in a disconnected environment.",
-    }
-    for term, definition in glossary.items():
-        with st.expander(term):
-            st.write(definition)
-    st.warning("This app is not an identity provider and does not encrypt the local data directory automatically. Protect the device, index and audit log with operating-system permissions.")
+    st.caption("Use an API provider that supports the OpenAI chat-completions format. Keep your API key in .env, never in source code or a committed file.")
+    st.markdown("### Data handling")
+    st.write("Files are indexed locally. When API mode is enabled, your question and the relevant retrieved passages are sent to the configured provider to generate the answer. Review your provider's data policy before uploading sensitive material.")
+    st.write("Raw upload copies are temporary and removed after ingestion. The local search index and audit records remain on this machine until you clear or delete them.")
+    with st.expander("Advanced: tool activity"):
+        _render_tools(agent)
+    with st.expander("Advanced: audit log"):
+        _render_audit(agent)
+    with st.expander("Glossary"):
+        glossary = {
+            "Source passage": "A section of a document retrieved because it may help answer your question.",
+            "RAG": "Retrieval-augmented generation: search for relevant text first, then ask a language model to answer using that context.",
+            "Embedding": "A numeric representation of text used by the search index to find related passages.",
+            "Audit log": "A local record of document and tool activity. It may contain questions and answers.",
+        }
+        for term, definition in glossary.items():
+            st.markdown(f"**{term}** — {definition}")
+    st.caption("This app does not provide multi-user authentication or automatically encrypt the local data directory. Protect the device and files with operating-system permissions.")
 
 
 def main() -> None:
     st.set_page_config(
-        page_title="Sovereign Workbench · Private Knowledge",
+        page_title="Sovereign Workbench",
         page_icon="◈",
         layout="wide",
         initial_sidebar_state="expanded",
@@ -563,67 +478,37 @@ def main() -> None:
     logging.basicConfig(level=get_settings().log_level)
     agent = _agent()
     _init_state(agent)
-    st.markdown(get_css(st.session_state["wb_theme"]), unsafe_allow_html=True)
-
-    backend = st.session_state["wb_backend"]
-    if st.session_state.get("wb_active_backend") != backend:
-        if backend == "Demo · offline":
-            agent.llm = DemoLLM()
-        else:
-            agent.llm = OllamaLLM()
-        st.session_state["wb_active_backend"] = backend
-        st.session_state.pop("wb_model_available", None)
-    if "wb_model_available" not in st.session_state:
-        try:
-            st.session_state["wb_model_available"] = bool(agent.llm.is_available())
-        except Exception:
-            st.session_state["wb_model_available"] = False
-    model_available = bool(st.session_state["wb_model_available"])
+    st.markdown(get_css("dark"), unsafe_allow_html=True)
+    try:
+        model_available = bool(agent.llm.is_available())
+    except Exception:
+        model_available = False
 
     with st.sidebar:
         st.markdown(
             '<div class="wb-brand"><div class="wb-mark"><svg viewBox="0 0 64 64" aria-label="Sovereign Workbench">'
-            '<path d="M9 17 32 7 55 18 55 45 32 57 9 45Z" fill="#173944" stroke="#55c7d9" stroke-width="2"/>'
-            '<path d="M18 25 32 17 46 25 46 39 32 47 18 39Z" fill="none" stroke="#9beaf4" stroke-width="2.5"/>'
-            '<circle cx="32" cy="32" r="5" fill="#55c7d9"/></svg></div>'
-            '<div class="wb-wordmark">SOVEREIGN WORKBENCH<small>Private knowledge · Local AI</small></div></div>',
+            '<path d="M9 17 32 7 55 18 55 45 32 57 9 45Z" fill="#27321a" stroke="#d4ff59" stroke-width="2"/>'
+            '<path d="M18 25 32 17 46 25 46 39 32 47 18 39Z" fill="none" stroke="#efffaf" stroke-width="2.5"/>'
+            '<circle cx="32" cy="32" r="5" fill="#d4ff59"/></svg></div>'
+            '<div class="wb-wordmark">SOVEREIGN<small>Knowledge, with sources</small></div></div>',
             unsafe_allow_html=True,
         )
-        st.caption("Industrial documents · Local-first workflow")
+        st.radio("Go to", PAGES, key="wb_page")
         st.divider()
-        st.radio("Workspace", PAGES, key="wb_page")
-        st.divider()
-        st.selectbox("Model backend", BACKENDS, key="wb_backend", help="Demo uses a template-based generator. Ollama sends prompts only to your configured local Ollama service.")
-        st.selectbox("Appearance", ["Dark", "Light"], key="wb_theme", help="Change the workspace color contrast.")
-        st.markdown(
-            f'<span class="wb-pill {"ok" if model_available else "warn"}"><strong>{"Ready" if model_available else "Not reachable"}</strong> model status</span>',
-            unsafe_allow_html=True,
-        )
-        st.caption("Offline policy: " + ("ON" if agent.settings.offline_mode else "OFF"))
-        if st.button("Recheck model status", use_container_width=True, help="Check the selected local backend again."):
-            try:
-                st.session_state["wb_model_available"] = bool(agent.llm.is_available())
-            except Exception:
-                st.session_state["wb_model_available"] = False
-            st.rerun()
-        st.divider()
-        st.caption(f"{agent.store.count()} indexed passage(s) · role: {agent.principal.role.value}")
+        st.caption(f"{len(agent.store.list_sources())} documents · {agent.store.count()} passages")
+        st.markdown(_status_pills(agent, model_available), unsafe_allow_html=True)
 
     page = st.session_state["wb_page"]
     brand_header(page, _status_pills(agent, model_available))
-
-    if page == "Overview":
+    if page == "Workspace":
         _render_overview(agent, model_available)
-    elif page == "Chat & Evidence":
         _render_chat(agent, model_available)
-    elif page == "Document Library":
+    elif page == "Documents":
         _render_documents(agent)
-    elif page == "Tool Trace":
-        _render_tools(agent)
-    elif page == "Audit Log":
-        _render_audit(agent)
     else:
         _render_settings(agent, model_available)
+
+
 
 
 if __name__ == "__main__":
