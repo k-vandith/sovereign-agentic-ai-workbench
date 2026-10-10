@@ -91,7 +91,7 @@ The Demo backend produces template-based answers and is useful for checking the 
 2. Pull the configured model, for example: **ollama pull llama3.2:1b**.
 3. Choose **Ollama · local model** in the sidebar.
 
-The workbench sends prompts to the configured local Ollama endpoint, not a hosted OpenAI-compatible API through this selector. The first embedding run may download sentence-transformer weights into the local Hugging Face cache. For a disconnected environment, pre-cache the weights first.
+The workbench sends prompts to the configured local Ollama endpoint, not a hosted OpenAI-compatible API through this selector. Default retrieval uses deterministic CPU word/bigram hashing and makes no model download. Optional semantic embeddings may download local transformer weights on first use, so pre-cache those weights before using a disconnected machine.
 
 ## Optional features
 
