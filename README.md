@@ -98,6 +98,7 @@ The workbench sends prompts to the configured local Ollama endpoint, not a hoste
 Install from the repository root:
 
 - PDF answer export: **python -m pip install -e ".[reports]"**
+- Semantic embeddings (optional): **python -m pip install torch --index-url https://download.pytorch.org/whl/cpu**, then **python -m pip install -e ".[embeddings]"**. Cache the configured model while online before switching to a disconnected environment.
 - OCR: **python -m pip install -e ".[ocr]"**, then install the Tesseract executable separately and ensure it is on PATH.
 - Screenshot capture: **python -m pip install -e ".[screenshots]"**, then **python -m playwright install chromium**.
 
@@ -127,7 +128,7 @@ flowchart LR
   Processor --> Retrieval
 ~~~
 
-Core agent, document processing, retrieval and audit logic stay outside the Streamlit UI. The vector store uses FAISS when available and a NumPy similarity fallback otherwise.
+Core agent, document processing, retrieval and audit logic stay outside the Streamlit UI. The vector store uses FAISS when available and a NumPy similarity fallback otherwise. The default embedding backend is dependency-light deterministic text hashing; semantic transformer embeddings are optional.
 
 ## Run tests
 
@@ -145,7 +146,7 @@ Core agent, document processing, retrieval and audit logic stay outside the Stre
 - This app does not provide an identity provider or multi-user authentication. A role setting is not a substitute for authenticated access control.
 - Demo responses are template-based, not a substitute for a real language model or source verification.
 - OCR is optional. Without Tesseract and pytesseract, images are stored as metadata-only passages.
-- Sentence-transformer weights may be downloaded on first use. Document contents are processed in the local app; use a pre-cached model if the machine must remain disconnected from the internet.
+- The default text-hashing retrieval mode has no model downloads. Optional semantic embeddings use local transformer weights; install a CPU-only PyTorch wheel and pre-cache the model before using a disconnected machine.
 - Safety-critical guidance must be checked against the original procedures and approved by the responsible person.
 
 ## Project layout
