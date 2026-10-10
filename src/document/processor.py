@@ -59,7 +59,7 @@ def _extract_image(path: Path) -> str:
                 import pytesseract
             except ImportError:
                 return (
-                    f"[Image file: {path.name}]\\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\\n"
+                    f"[Image file: {path.name}]\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\n"
                     "OCR is not enabled. Install the optional OCR extra and the Tesseract executable to index image text."
                 )
             try:
@@ -69,11 +69,11 @@ def _extract_image(path: Path) -> str:
                 extracted = ""
             if extracted:
                 return (
-                    f"[Image file: {path.name}]\\nFormat: {image_format}, size: {width}x{height} px\\n"
-                    "OCR text extracted locally:\\n" + extracted
+                    f"[Image file: {path.name}]\nFormat: {image_format}, size: {width}x{height} px\n"
+                    "OCR text extracted locally:\n" + extracted
                 )
             return (
-                f"[Image file: {path.name}]\\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\\n"
+                f"[Image file: {path.name}]\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\n"
                 "No OCR text was available. The file is indexed as image metadata only."
             )
     except Exception as exc:
