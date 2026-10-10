@@ -513,7 +513,6 @@ def _render_settings(agent: RAGAgent, model_available: bool) -> None:
         st.code("LLM_BACKEND=demo\n# or\nLLM_BACKEND=ollama\nOLLAMA_MODEL=llama3.2:1b", language="dotenv")
 
     section("Optional capability status", "Some features need extra packages or local system tools. Missing features are described rather than silently substituted.")
-    semantic_installed = importlib.util.find_spec("sentence_transformers") is not None
     semantic_active = agent.store.embedding_status().startswith("Semantic embeddings (CPU)")
     capabilities = [
         ("Hashed-text retrieval (CPU)", True, "Default mode. Uses deterministic local word/bigram features and requires no model download."),
