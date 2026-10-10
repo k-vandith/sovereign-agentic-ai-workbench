@@ -29,6 +29,8 @@ jobs:
         run: bandit -q -r src -ll
       - name: Dependency audit
         run: pip-audit -r requirements.txt --progress-spinner off
+      - name: Retrieval QA harness
+        run: PYTHONPATH=. python scripts/qa_retrieval_harness.py
       - name: Run tests
         run: pytest -v
         env:
