@@ -93,7 +93,7 @@ The default retrieval index uses local CPU-friendly text hashing. Optional seman
 
 ```powershell
 python -m pip install -r requirements-dev.txt
-ruff check src tests app.py run.py
+ruff check src tests run.py
 bandit -q -r src -ll
 pip-audit -r requirements.txt --progress-spinner off
 pytest -v
