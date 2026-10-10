@@ -8,8 +8,6 @@ import streamlit as st
 def page_intro(title: str, purpose: str, how_to: str) -> None:
     st.markdown(f"## {html.escape(title)}")
     st.markdown(f'<div class="wb-purpose">{html.escape(purpose)}</div>', unsafe_allow_html=True)
-    with st.expander("Details"):
-        st.write(how_to)
 
 
 def section(title: str, explanation: str = "") -> None:
