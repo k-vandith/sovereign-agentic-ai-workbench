@@ -61,10 +61,11 @@ def main() -> int:
             browser = playwright.chromium.launch(headless=True)
             page = browser.new_page(viewport={"width": 1440, "height": 1000}, device_scale_factor=1)
             page.goto(f"http://127.0.0.1:{PORT}", wait_until="domcontentloaded", timeout=60_000)
-            page.get_by_text("SOVEREIGN WORKBENCH", exact=True).wait_for(timeout=30_000)
+            page.locator(".wb-wordmark").wait_for(timeout=30_000)
             for filename, label in PAGES:
                 if label != "Overview":
                     page.get_by_role("radio", name=label).check(timeout=15_000)
+                    page.get_by_role("heading", name=label).wait_for(timeout=15_000)
                     page.wait_for_timeout(700)
                 page.screenshot(path=str(output_dir / f"{filename}.png"), full_page=True, animations="disabled")
                 print(f"Saved {output_dir / f'{filename}.png'}")
