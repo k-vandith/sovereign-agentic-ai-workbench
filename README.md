@@ -32,6 +32,12 @@ Python 3.11 or 3.12 is recommended.
 
 Open http://127.0.0.1:8501. The API can be started separately with python run.py --api and checked at http://127.0.0.1:8000/health.
 
+After your virtual environment is activated, the three-command launch is:
+
+    pip install -r requirements.txt
+    python scripts/generate_demo_data.py
+    python run.py
+
 ## What you can do
 
 - Add multiple PDF, DOCX, TXT, Markdown, CSV, JSON, LOG and common image files in one upload batch.
