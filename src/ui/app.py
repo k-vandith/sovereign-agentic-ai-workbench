@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import importlib.util
 import json
 import logging
 from pathlib import Path
@@ -176,9 +177,9 @@ def _render_overview(agent: RAGAgent, model_available: bool) -> None:
 
 def _render_documents(agent: RAGAgent) -> None:
     page_intro(
-        "Document Library",
-        "Upload several documents at once, validate their file types and size, and index their content for later questions.",
-        "Choose files, review the supported types, then select Index selected documents. The app reports status for each file. Raw upload copies are temporary; indexed text and embeddings stay in the local vector store until you clear it.",
+        "Documents",
+        "Add the files you want to search, preview them, and index their content.",
+        "Choose files, check the preview and per-file status, then ask questions from Workspace.",
     )
     notice = st.session_state.pop("wb_sample_notice", None)
     if notice:
