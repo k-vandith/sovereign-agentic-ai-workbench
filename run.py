@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from src.config.settings import Settings
+
 ROOT = Path(__file__).resolve().parent
 
 
@@ -18,20 +20,21 @@ def main() -> None:
     parser.add_argument("--api", action="store_true", help="Start the FastAPI server")
     parser.add_argument("--port", type=int, default=None)
     args = parser.parse_args()
+    settings = Settings(_env_file=ROOT / ".env")
     if args.api:
-        port = str(args.port or 8000)
+        port = str(args.port if args.port is not None else settings.api_port)
         cmd = [
             sys.executable,
             "-m",
             "uvicorn",
             "src.api.main:app",
             "--host",
-            "127.0.0.1",
+            settings.api_host,
             "--port",
             port,
         ]
     else:
-        port = str(args.port or 8501)
+        port = str(args.port if args.port is not None else settings.streamlit_port)
         cmd = [
             sys.executable,
             "-m",
