@@ -1,4 +1,4 @@
-"""Streamlit smoke tests for all primary workbench pages."""
+"""Smoke tests for the simplified primary workbench pages."""
 from pathlib import Path
 
 import pytest
@@ -7,14 +7,7 @@ pytest.importorskip("streamlit.testing.v1")
 from streamlit.testing.v1 import AppTest
 
 APP = Path(__file__).resolve().parents[1] / "src" / "ui" / "app.py"
-PAGES = [
-    "Overview",
-    "Chat & Evidence",
-    "Document Library",
-    "Tool Trace",
-    "Audit Log",
-    "Settings & Glossary",
-]
+PAGES = ["Workspace", "Documents", "Settings"]
 
 
 @pytest.mark.parametrize("page", PAGES)

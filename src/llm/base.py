@@ -1,4 +1,4 @@
-"""LLM abstraction layer supporting Ollama, OpenAI-compatible, and Demo backends."""
+"""Language generation adapters for API-powered answers and preview mode."""
 from __future__ import annotations
 
 import logging
@@ -37,11 +37,11 @@ class DemoLLM(BaseLLM):
         if context_block:
             return (
                 "[Demo Mode Response]\n\nBased on the retrieved local knowledge base:\n\n"
-                f"{context_block[:800]}\n\n---\nOffline demo backend. Set LLM_BACKEND=ollama for a real model."
+                f"{context_block[:800]}\n\n---\nPreview response. Configure an API in .env for stronger answers."
             )
         return (
             f"[Demo Mode Response]\n\nQuery: {question[:200]}\n\n"
-            "No relevant documents retrieved. Upload docs or enable Ollama."
+            "No relevant documents retrieved. Upload documents or configure an API for stronger answers."
         )
 
 
@@ -96,8 +96,9 @@ class OpenAICompatibleLLM(BaseLLM):
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
+        api_root = self.base_url if self.base_url.endswith("/v1") else f"{self.base_url}/v1"
         with httpx.Client(timeout=120.0) as client:
-            r = client.post(f"{self.base_url}/v1/chat/completions",
+            r = client.post(f"{api_root}/chat/completions",
                             json={"model": self.model, "messages": messages,
                                   "max_tokens": max_tokens, "temperature": temperature},
                             headers=headers)
@@ -110,22 +111,17 @@ class OfflineBlockedError(RuntimeError):
 
 
 def get_llm() -> BaseLLM:
+    """Choose the configured API when explicitly enabled; otherwise use safe preview mode."""
     settings = get_settings()
-    backend = settings.llm_backend
-    if settings.offline_mode and backend == "openai_compatible":
-        logger.warning("offline_mode active – refusing remote OpenAI-compatible endpoint")
+    if settings.llm_backend != "openai_compatible":
         return DemoLLM()
-    if backend == "ollama":
-        llm = OllamaLLM()
-        if llm.is_available():
-            return llm
-        logger.warning("Ollama not available – falling back to DemoLLM")
+    if settings.offline_mode:
+        logger.warning("offline_mode is enabled; using preview mode instead of a remote API")
         return DemoLLM()
-    if backend == "openai_compatible":
-        llm = OpenAICompatibleLLM()
-        if llm.is_available():
-            return llm
-        return DemoLLM()
+    llm = OpenAICompatibleLLM()
+    if llm.is_available():
+        return llm
+    logger.warning("API settings are incomplete; using preview mode")
     return DemoLLM()
 
 

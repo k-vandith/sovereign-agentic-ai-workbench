@@ -1,165 +1,126 @@
-# Sovereign Agentic AI Workbench
+# Sovereign Workbench
 
-![Sovereign Workbench product mark](docs/workbench-mark.svg)
+**A quieter workspace for answers grounded in your documents.**
 
-**Private knowledge. Local AI. Source-backed answers.**
+Add manuals, notes and procedures. Ask a question in one place, inspect the source passages behind the answer, and export a short report. The UI is intentionally focused on three areas: **Workspace**, **Documents**, and **Settings**.
 
-A guided document Q&A workbench for trainers, engineers and operational teams. Upload manuals and procedures, ask a question, open the source excerpts behind the answer, inspect local tool activity and export a report. The default Demo backend works without a hosted model API key; Ollama is available for local language-model generation.
+> For stronger answer generation, connect an API provider. The preview mode helps test uploading and source retrieval, but it is not a full reasoning model.
 
-## Quick start
+## Run locally
 
 Python 3.11 or 3.12 is recommended.
 
 ### Windows PowerShell
 
-    git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
-    cd sovereign-agentic-ai-workbench
-    python -m venv .venv
-    .venv\Scripts\Activate.ps1
-    python -m pip install --upgrade pip
-    pip install -r requirements-dev.txt
-    python run.py
+```powershell
+git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
+cd sovereign-agentic-ai-workbench
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -r requirements-dev.txt
+python run.py
+```
 
 ### Linux / macOS
 
-    git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
-    cd sovereign-agentic-ai-workbench
-    python3 -m venv .venv
-    source .venv/bin/activate
-    python -m pip install --upgrade pip
-    pip install -r requirements-dev.txt
-    python run.py
+```bash
+git clone https://github.com/k-vandith/sovereign-agentic-ai-workbench.git
+cd sovereign-agentic-ai-workbench
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r requirements-dev.txt
+python run.py
+```
 
-Open http://127.0.0.1:8501. The API can be started separately with python run.py --api and checked at http://127.0.0.1:8000/health.
+Open http://127.0.0.1:8501.
 
-After your virtual environment is activated, the three-command launch is:
+## Get better answers with an API
 
-    pip install -r requirements.txt
-    python scripts/generate_demo_data.py
-    python run.py
+1. Copy `.env.example` to `.env` in the repository root.
+2. Set `LLM_BACKEND=openai_compatible` and `OFFLINE_MODE=false`.
+3. Fill in the API endpoint, API key, and model name.
+4. Restart the app.
 
-## What you can do
+Example settings:
 
-- Add multiple PDF, DOCX, TXT, Markdown, CSV, JSON, LOG and common image files in one upload batch.
-- Preview the selection, validate file size/type and see a per-file indexing status.
-- Try the included fictional safety protocol, equipment manual and process notes.
-- Ask questions in a chat-style interface and open clickable source-excerpt panels.
-- Inspect tool-call inputs/outputs and read the local audit trail (admin role required).
-- Switch between the immediate Demo generator and an Ollama service on your machine.
-- Download a self-contained HTML answer report. PDF and OCR are optional features with setup instructions in Settings & Glossary.
+```dotenv
+LLM_BACKEND=openai_compatible
+OFFLINE_MODE=false
+OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
+OPENAI_COMPATIBLE_API_KEY=your_api_key_here
+OPENAI_COMPATIBLE_MODEL=your_model_name
+```
 
-## Try it in five steps
+Use a provider that supports the OpenAI chat-completions format. Keep your key in the local `.env` file; do not commit that file or paste keys into source code.
 
-1. Start the app and review the Overview. It explains the four-step workflow and shows the current document and model status.
-2. Click **Load sample documents**. The fictional industrial safety, pump and process notes are indexed locally.
-3. Open **Chat & Evidence** and ask: What is the maximum allowable temperature for Reactor R-12?
-4. Open the source excerpt below the answer, then open **Tool Trace** to inspect whether a utility ran.
-5. Download the HTML answer report. It includes the question, answer, retrieved source excerpts and tool activity.
+Without API configuration, the app runs in preview mode so you can check imports, retrieval and source excerpts. Preview responses are illustrative and should not be treated as full model answers.
 
-To use your own data, open Document Library, select one or more files, inspect the preview, and click Index selected documents. The raw upload copies are deleted after ingestion; indexed text chunks and embeddings remain in the local vector-store folder until you clear the index.
+**Data flow:** files are indexed locally. When API mode is enabled, the user's question and relevant retrieved passages are sent to the selected API provider for answer generation. Review that provider's data policy before uploading sensitive documents.
 
-## Supported inputs
+## A simple workflow
 
-| Format | Supported behavior | Notes |
-|---|---|---|
-| PDF | Extract selectable text | Scanned PDFs need an OCR workflow; embedded-page OCR is not automatic. |
-| DOCX | Extract paragraph text | Tables may not be included by the current extractor. |
-| TXT / MD / CSV / JSON / LOG | Read UTF-8 text and index it | Large batches are bounded by the upload limits. |
-| PNG / JPG / JPEG / WEBP / BMP | Index metadata by default; optional local OCR | Image understanding is not implied. Install Tesseract and the optional OCR extra to extract visible text. |
-| ZIP | Download the included sample pack | Upload extracted documents rather than the ZIP itself. |
+1. Open **Workspace**.
+2. Load the fictional sample pack or go to **Documents** to add your own files.
+3. Ask a question in the workspace.
+4. Open the source excerpts and verify key details against the original.
+5. Export the answer as HTML or, when ReportLab is installed, PDF.
 
-Upload limits are 25 MB per file and 100 MB per batch. The app validates extensions, reports processing errors by file and uses a temporary session directory for raw uploaded bytes.
+## Supported documents
+
+PDF, DOCX, TXT, Markdown, CSV, JSON, LOG and common image formats (PNG, JPG, JPEG, WEBP, BMP). Scanned PDFs and images need optional OCR; image upload alone does not imply visual understanding.
+
+Upload limits are 25 MB per file and 100 MB per batch. Raw upload copies are deleted after extraction. Indexed passages, embeddings and audit records remain in the local data directory until cleared or deleted.
 
 ## Navigation
 
-- **Overview** — product purpose, who it is for, four-step workflow, local index KPIs and sample shortcut.
-- **Chat & Evidence** — conversational questions, clickable source excerpts, a compact answer summary and report downloads.
-- **Document Library** — multiple uploads, preview, validation, per-file status, indexed source summaries and clear-index action.
-- **Tool Trace** — recent tool activity and a manual local utility runner.
-- **Audit Log** — local ingestion, prompt, answer and tool events. Access follows the configured agent role.
-- **Settings & Glossary** — model status, optional feature availability and plain-English definitions.
-
-## Model options
-
-### Demo
-
-The Demo backend produces template-based answers and is useful for checking the end-to-end interface. With indexed material, it can include passages retrieved from the local vector store. It is not a full reasoning model.
-
-### Ollama (local model)
-
-1. Install Ollama for your operating system.
-2. Pull the configured model, for example: **ollama pull llama3.2:1b**.
-3. Choose **Ollama · local model** in the sidebar.
-
-The workbench sends prompts to the configured local Ollama endpoint, not a hosted OpenAI-compatible API through this selector. Default retrieval uses deterministic CPU word/bigram hashing and makes no model download. Optional semantic embeddings may download local transformer weights on first use, so pre-cache those weights before using a disconnected machine.
+- **Workspace** — a short introduction and the main question-and-answer view.
+- **Documents** — upload, preview, index, inspect and clear sources.
+- **Settings** — configure API generation, understand data flow, and open advanced tool activity or the audit log when needed.
 
 ## Optional features
 
 Install from the repository root:
 
-- PDF answer export: **python -m pip install -e ".[reports]"**
-- Semantic embeddings (optional): **python -m pip install torch --index-url https://download.pytorch.org/whl/cpu**, then **python -m pip install -e ".[embeddings]"**. Cache the configured model while online before switching to a disconnected environment.
-- OCR: **python -m pip install -e ".[ocr]"**, then install the Tesseract executable separately and ensure it is on PATH.
-- Screenshot capture: **python -m pip install -e ".[screenshots]"**, then **python -m playwright install chromium**.
+- PDF answer export: `python -m pip install -e ".[reports]"`
+- OCR: `python -m pip install -e ".[ocr]"`, then install the Tesseract executable separately.
+- Browser screenshots: `python -m pip install -e ".[screenshots]"`, then `python -m playwright install chromium`.
 
-The Settings & Glossary page lists whether each feature is active and what is missing. Image uploads without OCR are indexed as image metadata only.
+The default retrieval index uses local CPU-friendly text hashing. Optional semantic embeddings may download transformer weights when enabled.
 
-## Capture screenshots of every page
+## Tests and checks
 
-Run the following commands on a machine with Chromium support:
+```powershell
+python -m pip install -r requirements-dev.txt
+ruff check src tests run.py
+bandit -q -r src -ll
+pip-audit -r requirements.txt --progress-spinner off
+pytest -v
+```
 
-    python -m pip install -e ".[screenshots]"
-    python -m playwright install chromium
-    python scripts/capture_screenshots.py
+## Security and limitations
 
-The script starts the app on port 8510 and saves actual Playwright screenshots for each navigation page to docs/screenshots/. Screenshots should be regenerated after visual changes; they are machine-generated artifacts, not hand-drawn mockups.
+- The local audit log may contain filenames, questions, answers and tool outputs. Protect it with operating-system permissions.
+- The application does not provide multi-user authentication or automatically encrypt the local data directory.
+- A local role setting is not a substitute for authenticated access control.
+- Retrieval and generated answers can be incomplete or incorrect. Confirm safety-critical guidance with the original document and responsible personnel.
+- Do not commit sensitive source documents or API credentials.
 
-## Architecture
+## Project structure
 
-~~~mermaid
-flowchart LR
-  UI[Streamlit workspace] --> Agent[RAG agent]
-  Agent --> Retrieval[Local vector store]
-  Agent --> LLM[Demo or local Ollama]
-  Agent --> Tools[Local calculator and document utilities]
-  Agent --> Audit[Local JSONL audit log]
-  Retrieval --> Chunks[Document passages]
-  Upload[Temporary uploads] --> Processor[PDF DOCX text and optional OCR]
-  Processor --> Retrieval
-~~~
-
-Core agent, document processing, retrieval and audit logic stay outside the Streamlit UI. The vector store uses FAISS when available and a NumPy similarity fallback otherwise. The default embedding backend is dependency-light deterministic text hashing; semantic transformer embeddings are optional.
-
-## Run tests
-
-    python -m pip install -r requirements-dev.txt
-    ruff check src tests app.py run.py
-    bandit -q -r src -ll
-    pip-audit -r requirements.txt --progress-spinner off
-    pytest -v
-
-## Privacy, roles and limitations
-
-- Raw upload copies are placed in a temporary folder and removed after ingestion. Extracted chunks and numeric embeddings remain locally persisted until the index is cleared.
-- The audit log can include filenames, questions, answers and tool outputs. Protect the data directory with operating-system permissions.
-- The DEFAULT_ROLE setting controls the local agent role. Audit access requires admin; for example, set DEFAULT_ROLE=admin in a local .env file and restart.
-- This app does not provide an identity provider or multi-user authentication. A role setting is not a substitute for authenticated access control.
-- Demo responses are template-based, not a substitute for a real language model or source verification.
-- OCR is optional. Without Tesseract and pytesseract, images are stored as metadata-only passages.
-- The default text-hashing retrieval mode has no model downloads. Optional semantic embeddings use local transformer weights; install a CPU-only PyTorch wheel and pre-cache the model before using a disconnected machine.
-- Safety-critical guidance must be checked against the original procedures and approved by the responsible person.
-
-## Project layout
-
-    src/
-      agent/       RAG agent, tools, RBAC and audit
-      document/    text extraction, chunking, temporary uploads and reports
-      retrieval/   local vector store
-      llm/         Demo and local model interfaces
-      ui/          Streamlit pages, style sheet, theme and components
-      api/         FastAPI endpoints
-    tests/         core, ingestion, API and page smoke tests
-    docs/          product mark and screenshot output directory
+```text
+src/
+  agent/       RAG, tools, permissions and audit
+  api/         FastAPI endpoints
+  config/      Environment settings
+  document/    Extraction, uploads and reports
+  llm/         API and preview generation
+  retrieval/   Local vector store
+  ui/          Streamlit workspace and theme
+tests/         Retrieval, ingestion, API and UI smoke tests
+docs/          Product mark and optional screenshots
+```
 
 ## License
 
