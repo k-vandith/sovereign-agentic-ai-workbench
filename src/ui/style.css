@@ -1,19 +1,19 @@
 
 :root {
-  --wb-bg: #0b1118;
-  --wb-surface: #121c27;
-  --wb-surface-2: #172433;
-  --wb-text: #eaf2f8;
-  --wb-muted: #a1b2c2;
-  --wb-border: #2b3d4d;
-  --wb-accent: #55c7d9;
-  --wb-accent-strong: #9beaf4;
-  --wb-accent-soft: #173944;
-  --wb-success: #67d8a5;
-  --wb-warning: #ffcf7d;
+  --wb-bg: #0e100d;
+  --wb-surface: #161a14;
+  --wb-surface-2: #1d2319;
+  --wb-text: #f0f2e8;
+  --wb-muted: #a6ae9d;
+  --wb-border: #30382a;
+  --wb-accent: #d4ff59;
+  --wb-accent-strong: #eaffb0;
+  --wb-accent-soft: #28341a;
+  --wb-success: #9ad9a2;
+  --wb-warning: #f5c36a;
   --wb-danger: #ff929a;
-  --wb-radius: 16px;
-  --wb-shadow: 0 12px 34px rgba(0,0,0,.12);
+  --wb-radius: 12px;
+  --wb-shadow: none;
 }
 html, body, [data-testid="stAppViewContainer"], .stApp {
   background: var(--wb-bg);
@@ -92,3 +92,31 @@ div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, div[data-base
  .block-container { padding-left:1rem; padding-right:1rem; }
  .wb-hero { border-radius:17px; }
 }
+
+/* Focused, editorial home screen: one headline, one call to action, no dashboard grid. */
+.wb-simple-hero {
+  padding: 1.5rem 0 1.6rem;
+  margin: 0 0 1.4rem;
+  border-bottom: 1px solid var(--wb-border);
+}
+.wb-simple-hero .wb-kicker { color: var(--wb-accent); }
+.wb-simple-hero h1 {
+  font-size: clamp(2.6rem, 5.2vw, 4.6rem);
+  line-height: .98;
+  letter-spacing: -.075em;
+  font-weight: 650;
+  max-width: 900px;
+  margin: 1rem 0 .9rem;
+}
+.wb-simple-hero h1 em { color: var(--wb-accent); font-style: normal; }
+.wb-simple-hero p { color: var(--wb-muted); font-size: 1rem; max-width: 600px; }
+.wb-chat-title { margin: .6rem 0 1rem; }
+.wb-chat-title h2 { font-size: clamp(1.45rem, 2.5vw, 2rem); margin-top: .45rem; }
+.wb-brand { margin-bottom: 10px; }
+.wb-wordmark { letter-spacing: .04em; }
+.wb-top { margin-bottom: 1.2rem; border-bottom: 1px solid var(--wb-border); padding-bottom: .9rem; }
+.wb-pill { border-radius: 8px; }
+[data-testid="stSidebar"] { border-right: 1px solid var(--wb-border); }
+.stButton > button[kind="primary"] { background: var(--wb-accent); color: #15190e; border: 0; }
+.stButton > button[kind="primary"]:hover { background: var(--wb-accent-strong); color: #15190e; }
+[data-testid="stChatInput"] textarea { border-color: var(--wb-border); }
