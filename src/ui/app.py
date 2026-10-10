@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import json
 import importlib.util
 import logging
 import shutil
@@ -11,7 +12,6 @@ import pandas as pd
 import streamlit as st
 
 from src.agent import RAGAgent
-from src.agent.rbac import Role
 from src.config import get_settings
 from src.document.io import build_answer_pdf, build_answer_report, build_sample_archive
 from src.document.uploads import ingest_uploaded_files
@@ -482,7 +482,7 @@ def _render_audit(agent: RAGAgent) -> None:
     st.dataframe(frame[preferred + remainder], use_container_width=True, hide_index=True)
     st.download_button(
         "Download visible audit events (.json)",
-        data=__import__("json").dumps(rows, ensure_ascii=False, indent=2).encode("utf-8"),
+        data=json.dumps(rows, ensure_ascii=False, indent=2).encode("utf-8"),
         file_name="sovereign_workbench_audit.json",
         mime="application/json",
     )
