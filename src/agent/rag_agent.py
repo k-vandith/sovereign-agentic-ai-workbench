@@ -82,7 +82,7 @@ class RAGAgent:
                 id=f"{path.stem}_{i}",
                 text=c,
                 source=str(path.name),
-                metadata={"path": str(path), "chunk_index": i},
+                metadata={"path": path.name, "chunk_index": i},
             )
             for i, c in enumerate(chunks_raw)
         ]
