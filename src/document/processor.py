@@ -36,12 +36,7 @@ def extract_text_from_file(path: Path) -> str:
         if suffix in SUPPORTED_DOCX:
             return _extract_docx(path)
         if suffix in SUPPORTED_IMAGE:
-            return (
-                f"[Image file: {path.name}]\n"
-                f"Size: {path.stat().st_size} bytes\n"
-                "Note: Full OCR requires an optional Tesseract installation. "
-                "Image is registered for multimodal backends that support it."
-            )
+            return _extract_image(path)
         raise ValueError(
             f"Unsupported file type '{suffix}'. "
             f"Supported: {SUPPORTED_TEXT | SUPPORTED_PDF | SUPPORTED_DOCX | SUPPORTED_IMAGE}"
@@ -50,6 +45,39 @@ def extract_text_from_file(path: Path) -> str:
         logger.exception("Failed to extract text from %s", path)
         raise ValueError(f"Failed to process {path.name}: {exc}") from exc
 
+
+def _extract_image(path: Path) -> str:
+    """Extract image text when optional Tesseract OCR is installed; otherwise register metadata."""
+    from PIL import Image
+
+    try:
+        with Image.open(path) as image:
+            width, height = image.size
+            image_format = image.format or path.suffix.lstrip(".").upper()
+            mode = image.mode
+            try:
+                import pytesseract
+            except ImportError:
+                return (
+                    f"[Image file: {path.name}]\\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\\n"
+                    "OCR is not enabled. Install the optional OCR extra and the Tesseract executable to index image text."
+                )
+            try:
+                extracted = pytesseract.image_to_string(image).strip()
+            except Exception as exc:
+                logger.info("Optional OCR is unavailable for %s: %s", path.name, exc)
+                extracted = ""
+            if extracted:
+                return (
+                    f"[Image file: {path.name}]\\nFormat: {image_format}, size: {width}x{height} px\\n"
+                    "OCR text extracted locally:\\n" + extracted
+                )
+            return (
+                f"[Image file: {path.name}]\\nFormat: {image_format}, mode: {mode}, size: {width}x{height} px\\n"
+                "No OCR text was available. The file is indexed as image metadata only."
+            )
+    except Exception as exc:
+        raise ValueError(f"Could not open image file {path.name}. Check that it is a valid image.") from exc
 
 def _extract_pdf(path: Path) -> str:
     reader = PdfReader(str(path))
