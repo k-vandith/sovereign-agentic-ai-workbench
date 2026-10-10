@@ -110,7 +110,7 @@ def ingest_uploaded_files(
     results = list(validation_errors)
     with TemporaryDirectory(prefix="sovereign-workbench-upload-") as folder:
         used_names: set[str] = set()
-        for index, (name, _suffix, raw) in enumerate(ready, start=1):
+        for name, _suffix, raw in ready:
             stem, suffix = Path(name).stem, Path(name).suffix
             candidate = name
             duplicate = 2
