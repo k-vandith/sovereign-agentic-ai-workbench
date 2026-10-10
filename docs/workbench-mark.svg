@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Sovereign Workbench logo">
-  <rect width="128" height="128" rx="28" fill="#0b1118"/>
-  <path d="M20 35 64 15 108 35 108 86 64 109 20 86Z" fill="#173944" stroke="#55c7d9" stroke-width="4"/>
-  <path d="M36 43 64 30 92 43 92 78 64 93 36 78Z" fill="none" stroke="#9beaf4" stroke-width="5"/>
-  <circle cx="64" cy="61" r="10" fill="#55c7d9"/>
-  <path d="M64 15V30M20 35 36 43M108 35 92 43M20 86 36 78M108 86 92 78M64 109V93" stroke="#55c7d9" stroke-width="3"/>
+  <rect width="128" height="128" rx="28" fill="#0e100d"/>
+  <path d="M20 35 64 15 108 35 108 86 64 109 20 86Z" fill="#28341a" stroke="#d4ff59" stroke-width="4"/>
+  <path d="M36 43 64 30 92 43 92 78 64 93 36 78Z" fill="none" stroke="#eaffb0" stroke-width="5"/>
+  <circle cx="64" cy="61" r="10" fill="#d4ff59"/>
+  <path d="M64 15V30M20 35 36 43M108 35 92 43M20 86 36 78M108 86 92 78M64 109V93" stroke="#d4ff59" stroke-width="3"/>
 </svg>
