@@ -137,6 +137,10 @@ class LocalVectorStore:
         except Exception as exc:
             logger.warning("Semantic embedding failed; switching to hashed-text retrieval: %s", exc)
             self._model = False
+            if self._embedding_mode == "semantic":
+                self._rehash_existing_chunks()
+            else:
+                self._embedding_mode = "hashed"
             self._semantic_status = "unavailable; using hashed-text retrieval"
             return self._hashed_text_embeddings(texts)
 
