@@ -105,9 +105,9 @@ def _render_load_sample(agent: RAGAgent, button_key: str = "wb_load_sample") -> 
         st.session_state["wb_ingest_results"] = summary.get("details", [])
         successful = sum(1 for item in summary.get("details", []) if "error" not in item)
         if successful:
-            st.success(f"Indexed {successful} sample document(s). You can now ask a question in Chat & Evidence.")
+            st.session_state["wb_sample_notice"] = f"Indexed {successful} sample document(s). You can now ask a question in Chat & Evidence."
         else:
-            st.warning("The sample pack could not be loaded. Follow the instruction shown in the result details.")
+            st.session_state["wb_sample_notice"] = "The sample pack could not be loaded. Check the result details."
         st.rerun()
 
 
@@ -170,6 +170,9 @@ def _render_overview(agent: RAGAgent, model_available: bool) -> None:
         "Ask questions about local manuals and procedures, inspect the source evidence, and keep a readable record of tool activity.",
         "Start by loading the fictional sample pack or uploading your own files. Ask one concrete question. Open each source excerpt to inspect the evidence behind the answer.",
     )
+    notice = st.session_state.pop("wb_sample_notice", None)
+    if notice:
+        st.success(notice)
     st.markdown(
         '<div class="wb-hero"><div class="wb-eyebrow">PRIVATE KNOWLEDGE · LOCAL AI</div>'
         '<h1>Ask your documents. Keep control of your data.</h1>'
@@ -233,13 +236,21 @@ def _render_documents(agent: RAGAgent) -> None:
         "Upload several documents at once, validate their file types and size, and index their content for later questions.",
         "Choose files, review the supported types, then select Index selected documents. The app reports status for each file. Raw upload copies are temporary; indexed text and embeddings stay in the local vector store until you clear it.",
     )
-    st.download_button(
-        "Download sample document pack (.zip)",
-        data=build_sample_archive(ROOT / "data" / "sample"),
-        file_name="sovereign_workbench_sample_documents.zip",
-        mime="application/zip",
-        help="A ZIP of fictional industrial notes you can load as a sample case.",
-    )
+    notice = st.session_state.pop("wb_sample_notice", None)
+    if notice:
+        st.success(notice)
+    sample_cols = st.columns(2)
+    with sample_cols[0]:
+        st.download_button(
+            "Download sample document pack (.zip)",
+            data=build_sample_archive(ROOT / "data" / "sample"),
+            file_name="sovereign_workbench_sample_documents.zip",
+            mime="application/zip",
+            help="A ZIP of fictional industrial notes you can load as a sample case.",
+            use_container_width=True,
+        )
+    with sample_cols[1]:
+        _render_load_sample(agent, "wb_load_sample_docs")
     uploads = st.file_uploader(
         "Choose one or more documents",
         type=UPLOAD_TYPES,
@@ -261,10 +272,27 @@ def _render_documents(agent: RAGAgent) -> None:
             })
         st.dataframe(pd.DataFrame(preview_rows), use_container_width=True, hide_index=True)
         st.caption(f"{len(uploads)} file(s) selected · {total_bytes / (1024 * 1024):.2f} MB total · Batch limit 100 MB.")
+        with st.expander("Preview selected files"):
+            for upload in uploads[:5]:
+                suffix = Path(upload.name).suffix.lower()
+                st.markdown(f"**{html.escape(upload.name)}**")
+                if suffix in {".txt", ".md", ".csv", ".json", ".log"}:
+                    preview = upload.getvalue().decode("utf-8", errors="replace")[:1800]
+                    st.code(preview or "The file has no readable text.", language="text")
+                elif suffix in {".pdf", ".docx"}:
+                    st.caption("Text preview is available in the indexed library after successful extraction.")
+                else:
+                    st.caption("Image upload is supported. Text extraction from images requires optional local OCR.")
         signature = tuple((upload.name, int(getattr(upload, "size", 0) or 0)) for upload in uploads)
         already_processed = signature == st.session_state.get("wb_processed_signature")
         if already_processed:
-            st.info("This exact selection was already processed. Clear the selection below to choose another batch.")
+            st.info("This exact selection was already processed. Use Re-index same selection to run it again.")
+        if already_processed:
+            st.button(
+                "Re-index same selection",
+                key="wb_reindex_selection",
+                on_click=lambda: st.session_state.pop("wb_processed_signature", None),
+            )
         if st.button("Index selected documents", type="primary", disabled=already_processed, key="wb_index_uploads"):
             with st.spinner("Validating and indexing documents in a temporary session folder…"):
                 results = ingest_uploaded_files(agent, uploads)
@@ -276,11 +304,6 @@ def _render_documents(agent: RAGAgent) -> None:
             if succeeded < len(uploads):
                 st.warning("Some files were not indexed. Check the per-file result table below.")
             st.rerun()
-        st.button(
-            "Clear selected files",
-            on_click=lambda: st.session_state.update({"wb_upload_files": [], "wb_processed_signature": None}),
-            key="wb_clear_uploads",
-        )
     with st.expander("What happens to uploaded data?"):
         st.write(
             "Each selected file is checked against supported extensions, a 25 MB per-file limit and a 100 MB batch limit. "
