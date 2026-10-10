@@ -104,7 +104,7 @@ class ToolRegistry:
                 mode, fmt = img.mode, (img.format or path.suffix)
             return (
                 f"Image file: {path.name}\nFormat: {fmt}, mode: {mode}, size: {w}x{h} px\n"
-                "Content: local metadata analysis only. For semantic vision, enable Ollama llava."
+                "Content: local metadata analysis only. Semantic image understanding is not enabled in this build."
             )
         except Exception as exc:
             return f"Could not analyse image: {exc}"
