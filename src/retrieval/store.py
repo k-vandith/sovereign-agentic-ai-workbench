@@ -1,8 +1,10 @@
-"""Local vector store using sentence-transformers + FAISS (CPU)."""
+"""CPU-only local text retrieval with optional transformer embeddings and FAISS."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import re
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -24,10 +26,12 @@ class DocumentChunk:
 
 
 class LocalVectorStore:
-    """Simple FAISS-backed vector store with JSON metadata.
+    """Local vector store with a dependency-light hashed-text default.
 
-    Works fully offline after the embedding model is cached.
-    Falls back to pure-numpy cosine search if FAISS is unavailable.
+    If sentence-transformers is installed and its model is available, semantic
+    embeddings are used. Otherwise deterministic feature hashing supports lexical
+    retrieval without a model download. FAISS is optional; NumPy cosine search
+    remains available as a fallback.
     """
 
     def __init__(
@@ -39,24 +43,81 @@ class LocalVectorStore:
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.embedding_model_name = embedding_model_name
         self._model = None
+        self._semantic_status = "not checked"
         self._index = None
         self._chunks: list[DocumentChunk] = []
         self._embeddings: np.ndarray | None = None
         self._use_faiss = False
         self._load()
 
-    def _get_model(self):
-        if self._model is None:
-            from sentence_transformers import SentenceTransformer
+    @staticmethod
+    def _hashed_text_embeddings(texts: list[str], dimensions: int = 768) -> np.ndarray:
+        """Create deterministic CPU-only token and bigram vectors without model files."""
+        matrix = np.zeros((len(texts), dimensions), dtype=np.float32)
+        for row_index, text in enumerate(texts):
+            tokens = re.findall(r"[a-z0-9][a-z0-9._-]*", str(text).lower())
+            features = tokens + [f"{a}::{b}" for a, b in zip(tokens, tokens[1:])]
+            for feature in features:
+                digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
+                slot = int.from_bytes(digest[:4], "little") % dimensions
+                sign = 1.0 if digest[4] & 1 else -1.0
+                matrix[row_index, slot] += sign
+            norm = float(np.linalg.norm(matrix[row_index]))
+            if norm:
+                matrix[row_index] /= norm
+        return matrix
 
-            logger.info("Loading embedding model: %s", self.embedding_model_name)
-            self._model = SentenceTransformer(self.embedding_model_name)
+    def _get_model(self):
+        if self._model is False:
+            return None
+        if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
+                self._model = False
+                self._semantic_status = "not installed"
+                logger.info("sentence-transformers is not installed; using hashed-text retrieval.")
+                return None
+            try:
+                logger.info("Loading embedding model: %s", self.embedding_model_name)
+                self._model = SentenceTransformer(self.embedding_model_name, device="cpu")
+                self._semantic_status = "active"
+            except Exception as exc:
+                self._model = False
+                self._semantic_status = "unavailable; using hashed-text retrieval"
+                logger.warning("Semantic embedding model unavailable; using hashed-text retrieval: %s", exc)
+                return None
         return self._model
+
+    def embedding_status(self) -> str:
+        """Describe which local embedding mode is currently active."""
+        if self._semantic_status == "not checked":
+            if self._model is False:
+                return "Hashed-text retrieval (CPU)"
+            if self._model is not None:
+                return "Semantic embeddings (CPU)"
+            try:
+                import importlib.util
+                if importlib.util.find_spec("sentence_transformers") is None:
+                    self._semantic_status = "not installed"
+            except (ImportError, ValueError):
+                self._semantic_status = "not installed"
+        if self._semantic_status == "active":
+            return "Semantic embeddings (CPU)"
+        return "Hashed-text retrieval (CPU)"
 
     def _embed(self, texts: list[str]) -> np.ndarray:
         model = self._get_model()
-        emb = model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
-        return np.asarray(emb, dtype=np.float32)
+        if model is None:
+            return self._hashed_text_embeddings(texts)
+        try:
+            emb = model.encode(texts, show_progress_bar=False, convert_to_numpy=True, device="cpu")
+            return np.asarray(emb, dtype=np.float32)
+        except Exception as exc:
+            logger.warning("Semantic embedding failed; switching to hashed-text retrieval: %s", exc)
+            self._model = False
+            self._semantic_status = "unavailable; using hashed-text retrieval"
+            return self._hashed_text_embeddings(texts)
 
     def add_documents(self, chunks: list[DocumentChunk]) -> int:
         """Add chunks to the store and rebuild the index."""
