@@ -4,6 +4,8 @@ from pathlib import Path
 from zipfile import ZipFile
 from io import BytesIO
 
+import pytest
+
 from src.document.io import build_answer_pdf, build_answer_report, build_sample_archive
 from src.document.uploads import ingest_uploaded_files
 
@@ -103,3 +105,92 @@ def test_sample_archive_is_created_in_memory(tmp_path: Path):
 def test_pdf_report_is_explicitly_optional():
     result = build_answer_pdf("Question", "Answer", [], [], "DemoLLM")
     assert result is None or result.startswith(b"%PDF")
+
+
+def test_batch_limit_stops_reading_remaining_uploads():
+    class TrackedUpload(FakeUpload):
+        def __init__(self, name: str, data: bytes):
+            super().__init__(name, data)
+            self.read_count = 0
+
+        def getvalue(self) -> bytes:
+            self.read_count += 1
+            return self.data
+
+    first = TrackedUpload("first.txt", b"123")
+    second = TrackedUpload("second.txt", b"456")
+    third = TrackedUpload("third.txt", b"789")
+
+    result = ingest_uploaded_files(
+        RecordingAgent(),
+        [first, second, third],
+        max_file_bytes=4,
+        max_batch_bytes=5,
+    )
+
+    assert len(result) == 1
+    assert result[0]["status"] == "Not loaded"
+    assert "total limit" in result[0]["message"]
+    assert [first.read_count, second.read_count, third.read_count] == [0, 0, 0]
+
+
+def test_sample_archive_skips_symlinked_files(tmp_path: Path):
+    sample_dir = tmp_path / "samples"
+    sample_dir.mkdir()
+    outside = tmp_path / "private.txt"
+    outside.write_text("private content", encoding="utf-8")
+    link = sample_dir / "linked.txt"
+    try:
+        link.symlink_to(outside)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks are not available in this environment.")
+
+    archive_data = build_sample_archive(sample_dir)
+    with ZipFile(BytesIO(archive_data)) as archive:
+        assert "linked.txt" not in archive.namelist()
+        assert all(b"private content" not in archive.read(name) for name in archive.namelist())
+
+
+def test_pdf_export_preserves_multiline_question_and_answer():
+    pytest.importorskip("reportlab")
+    from pypdf import PdfReader
+
+    pdf = build_answer_pdf(
+        "Question line one\nQuestion line two",
+        "Answer line one\nAnswer line two",
+        [],
+        [],
+        "DemoLLM",
+    )
+    assert pdf is not None
+    extracted = "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages)
+    normalized = extracted.replace("\r\n", "\n").replace("\r", "\n")
+
+    assert "Question line one\nQuestion line two" in normalized
+    assert "Answer line one\nAnswer line two" in normalized
+
+
+def test_empty_sample_archive_contains_real_newlines(tmp_path: Path):
+    sample_dir = tmp_path / "empty-samples"
+    sample_dir.mkdir()
+    archive_data = build_sample_archive(sample_dir)
+
+    with ZipFile(BytesIO(archive_data)) as archive:
+        note = archive.read("sample_process_note.txt").decode("utf-8")
+
+    assert "Fictional sample note\nThe pump unit" in note
+    assert "Fictional sample note\\nThe pump unit" not in note
+
+
+def test_upload_reports_when_no_searchable_text_was_extracted():
+    class EmptyTextAgent(RecordingAgent):
+        def ingest_file(self, path: Path):
+            self.paths.append(path)
+            self.contents.append(path.read_bytes())
+            return {"file": path.name, "chunks_added": 0, "total_chunks": 0}
+
+    result = ingest_uploaded_files(EmptyTextAgent(), [FakeUpload("scanned.pdf", b"document bytes")])
+
+    assert result[0]["status"] == "No searchable text"
+    assert result[0]["chunks_added"] == 0
+    assert "not available for retrieval" in result[0]["message"]

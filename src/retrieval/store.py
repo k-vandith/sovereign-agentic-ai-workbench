@@ -4,7 +4,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import re
+import tempfile
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass, asdict
 from pathlib import Path
 from typing import Any
@@ -12,6 +16,65 @@ from typing import Any
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+_STORE_LOCKS_GUARD = threading.Lock()
+_STORE_LOCKS: dict[str, Any] = {}
+
+
+def _shared_thread_lock(path_key: str):
+    with _STORE_LOCKS_GUARD:
+        return _STORE_LOCKS.setdefault(path_key, threading.RLock())
+
+
+@contextmanager
+def _exclusive_process_lock(path: Path):
+    """Acquire an OS file lock so separate UI/API processes cannot interleave writes."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as stream:
+        if os.name == "nt":
+            import msvcrt
+
+            stream.seek(0, os.SEEK_END)
+            if stream.tell() == 0:
+                stream.write(b"\\0")
+                stream.flush()
+            stream.seek(0)
+            msvcrt.locking(stream.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _atomic_write_bytes(path: Path, data: bytes) -> None:
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile("wb", dir=path.parent, prefix=f".{path.name}.", delete=False) as stream:
+            temporary_path = Path(stream.name)
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_path, path)
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 @dataclass
@@ -42,6 +105,8 @@ class LocalVectorStore:
         self.persist_dir = Path(persist_dir)
         self.persist_dir.mkdir(parents=True, exist_ok=True)
         self.embedding_model_name = embedding_model_name
+        self._lock = _shared_thread_lock(str(self.persist_dir.resolve()))
+        self._loaded_manifest_sha: str | None = None
         self._model = None
         self._semantic_status = "not checked"
         self._embedding_mode: str | None = None
@@ -49,7 +114,8 @@ class LocalVectorStore:
         self._chunks: list[DocumentChunk] = []
         self._embeddings: np.ndarray | None = None
         self._use_faiss = False
-        self._load()
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._load()
 
     @staticmethod
     def _hashed_text_embeddings(texts: list[str], dimensions: int = 384) -> np.ndarray:
@@ -145,26 +211,112 @@ class LocalVectorStore:
             self._semantic_status = "unavailable; using hashed-text retrieval"
             return self._hashed_text_embeddings(texts)
 
-    def add_documents(self, chunks: list[DocumentChunk]) -> int:
-        """Add chunks to the store and rebuild the index."""
+    def add_documents(
+        self,
+        chunks: list[DocumentChunk],
+        *,
+        replace_source: str | None = None,
+    ) -> int:
+        """Serialize updates and refresh stale state before applying new chunks."""
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._refresh_if_changed()
+            return self._add_documents_unlocked(chunks, replace_source=replace_source)
+
+    def _add_documents_unlocked(
+        self,
+        chunks: list[DocumentChunk],
+        *,
+        replace_source: str | None = None,
+    ) -> int:
+        """Add chunks, optionally replacing a source without retaining stale passages."""
         if not chunks:
+            if replace_source is None:
+                return 0
+            keep_indices = [
+                index for index, chunk in enumerate(self._chunks)
+                if chunk.source != replace_source
+            ]
+            if len(keep_indices) == len(self._chunks):
+                return 0
+            self._chunks = [self._chunks[index] for index in keep_indices]
+            if not self._chunks:
+                self._embeddings = None
+                self._index = None
+                self._use_faiss = False
+            elif self._embeddings is not None:
+                self._embeddings = self._embeddings[keep_indices]
+            else:
+                self._embedding_mode = "hashed"
+                self._model = False
+                self._embeddings = self._hashed_text_embeddings([chunk.text for chunk in self._chunks])
+            self._rebuild_index()
+            self._save()
             return 0
-        texts = [c.text for c in chunks]
-        new_emb = self._embed(texts)
-        start_idx = len(self._chunks)
-        for i, c in enumerate(chunks):
-            c.id = c.id or f"chunk_{start_idx + i}"
-            self._chunks.append(c)
-        if self._embeddings is None:
-            self._embeddings = new_emb
+
+        new_emb = self._embed([chunk.text for chunk in chunks])
+        if replace_source is not None:
+            keep_indices = [
+                index for index, chunk in enumerate(self._chunks)
+                if chunk.source != replace_source
+            ]
+            retained_chunks = [self._chunks[index] for index in keep_indices]
+            retained_embeddings = (
+                self._embeddings[keep_indices] if self._embeddings is not None else None
+            )
+            start_idx = len(retained_chunks)
+            for index, chunk in enumerate(chunks):
+                chunk.id = chunk.id or f"chunk_{start_idx + index}"
+            combined_chunks = retained_chunks + chunks
+
+            if retained_chunks and (
+                retained_embeddings is None
+                or retained_embeddings.ndim != 2
+                or retained_embeddings.shape[1] != new_emb.shape[1]
+            ):
+                # The configured embedding model may have changed since retained vectors
+                # were created. Rebuild all vectors together to preserve dimensionality.
+                combined_embeddings = self._embed([chunk.text for chunk in combined_chunks])
+            elif retained_chunks and retained_embeddings is not None:
+                combined_embeddings = np.vstack([retained_embeddings, new_emb])
+            else:
+                combined_embeddings = new_emb
+
+            self._chunks = combined_chunks
+            self._embeddings = combined_embeddings
         else:
-            self._embeddings = np.vstack([self._embeddings, new_emb])
+            start_idx = len(self._chunks)
+            for index, chunk in enumerate(chunks):
+                chunk.id = chunk.id or f"chunk_{start_idx + index}"
+            if (
+                self._embeddings is not None
+                and self._embeddings.ndim == 2
+                and self._embeddings.shape[1] != new_emb.shape[1]
+            ):
+                # Avoid a shape-mismatch crash if the available embedding backend changed.
+                combined_chunks = self._chunks + chunks
+                self._chunks = combined_chunks
+                self._embeddings = self._embed([chunk.text for chunk in combined_chunks])
+            else:
+                self._chunks.extend(chunks)
+                if self._embeddings is None or len(self._embeddings) == 0:
+                    self._embeddings = new_emb
+                else:
+                    self._embeddings = np.vstack([self._embeddings, new_emb])
+
         self._rebuild_index()
         self._save()
         return len(chunks)
 
     def search(self, query: str, top_k: int = 5) -> list[tuple[DocumentChunk, float]]:
+        """Refresh persistent changes and run retrieval under a shared store lock."""
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._refresh_if_changed()
+            return self._search_unlocked(query, top_k=top_k)
+
+    def _search_unlocked(self, query: str, top_k: int = 5) -> list[tuple[DocumentChunk, float]]:
         """Return top-k most similar chunks with cosine similarity scores."""
+        if isinstance(top_k, bool) or not isinstance(top_k, int) or top_k < 1:
+            raise ValueError("top_k must be a positive integer.")
         if not self._chunks or self._embeddings is None:
             return []
         q_emb = self._embed([query])[0]
@@ -186,16 +338,27 @@ class LocalVectorStore:
         return [(self._chunks[i], float(sims[i])) for i in top_idx]
 
     def clear(self) -> None:
-        self._chunks = []
-        self._embeddings = None
-        self._index = None
-        self._save()
+        """Clear the shared index as one serialized persistent operation."""
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._chunks = []
+            self._embeddings = None
+            self._index = None
+            self._use_faiss = False
+            self._save()
 
     def list_sources(self) -> list[dict[str, Any]]:
-        """Return a safe summary of documents represented in the local index."""
+        """Return a safe summary of documents represented in the local index.
+        
+        Persistent updates from other app processes are picked up before the summary.
+        """
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._refresh_if_changed()
+            return self._list_sources_unlocked()
+
+    def _list_sources_unlocked(self) -> list[dict[str, Any]]:
         summaries: dict[str, dict[str, Any]] = {}
         for chunk in self._chunks:
-            name = Path(chunk.source).name or "Untitled document"
+            name = Path(chunk.source).as_posix() or "Untitled document"
             item = summaries.setdefault(
                 name,
                 {"source": name, "chunks": 0, "preview": "", "pages": set()},
@@ -212,10 +375,14 @@ class LocalVectorStore:
         return sorted(result, key=lambda item: item["source"].casefold())
 
     def count(self) -> int:
-        return len(self._chunks)
+        with self._lock, _exclusive_process_lock(self.persist_dir / ".index.lock"):
+            self._refresh_if_changed()
+            return len(self._chunks)
 
     def _rebuild_index(self) -> None:
         if self._embeddings is None or len(self._embeddings) == 0:
+            self._index = None
+            self._use_faiss = False
             return
         try:
             import faiss
@@ -232,29 +399,152 @@ class LocalVectorStore:
             self._index = None
 
     def _save(self) -> None:
+        """Persist the index atomically and publish a manifest only after all files are ready."""
         meta_path = self.persist_dir / "chunks.json"
         emb_path = self.persist_dir / "embeddings.npy"
         mode_path = self.persist_dir / "embedding_mode.txt"
-        data = [asdict(c) for c in self._chunks]
-        meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        model_path = self.persist_dir / "embedding_model_name.txt"
+        manifest_path = self.persist_dir / "index_manifest.json"
+
+        _atomic_write_bytes(
+            meta_path,
+            json.dumps([asdict(chunk) for chunk in self._chunks], indent=2).encode("utf-8"),
+        )
         if self._embeddings is not None:
-            np.save(str(emb_path), self._embeddings)
-        mode_path.write_text(self._embedding_mode or "unknown", encoding="utf-8")
+            temporary_path: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    "wb", dir=self.persist_dir, prefix=f".{emb_path.name}.", delete=False
+                ) as stream:
+                    temporary_path = Path(stream.name)
+                    np.save(stream, self._embeddings)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary_path, emb_path)
+            finally:
+                if temporary_path is not None:
+                    temporary_path.unlink(missing_ok=True)
+        else:
+            emb_path.unlink(missing_ok=True)
+
+        _atomic_write_bytes(mode_path, (self._embedding_mode or "unknown").encode("utf-8"))
+        _atomic_write_bytes(model_path, self.embedding_model_name.encode("utf-8"))
+        manifest = {
+            "chunks_sha256": _sha256_file(meta_path),
+            "embeddings_sha256": _sha256_file(emb_path) if emb_path.exists() else None,
+            "embedding_mode_sha256": _sha256_file(mode_path),
+            "embedding_model_name_sha256": _sha256_file(model_path),
+        }
+        _atomic_write_bytes(
+            manifest_path,
+            json.dumps(manifest, indent=2, sort_keys=True).encode("utf-8"),
+        )
+        self._loaded_manifest_sha = _sha256_file(manifest_path)
+
+    def _refresh_if_changed(self) -> None:
+        """Reload only when the manifest changed, avoiding stale concurrent writers."""
+        manifest_path = self.persist_dir / "index_manifest.json"
+        if not manifest_path.exists():
+            if self._loaded_manifest_sha is not None:
+                self._load()
+            return
+        current_sha = _sha256_file(manifest_path)
+        if current_sha != self._loaded_manifest_sha:
+            self._load()
 
     def _load(self) -> None:
+        # Refreshes may follow a clear or replacement from another process.
+        self._chunks = []
+        self._embeddings = None
+        self._index = None
+        self._use_faiss = False
+        self._embedding_mode = None
         meta_path = self.persist_dir / "chunks.json"
         emb_path = self.persist_dir / "embeddings.npy"
         mode_path = self.persist_dir / "embedding_mode.txt"
+        model_path = self.persist_dir / "embedding_model_name.txt"
+        manifest_path = self.persist_dir / "index_manifest.json"
         if meta_path.exists():
             raw = json.loads(meta_path.read_text(encoding="utf-8"))
             self._chunks = [DocumentChunk(**item) for item in raw]
         if mode_path.exists():
             saved_mode = mode_path.read_text(encoding="utf-8").strip()
             self._embedding_mode = saved_mode if saved_mode in {"semantic", "hashed"} else None
-        if emb_path.exists() and self._chunks:
-            self._embeddings = np.load(str(emb_path))
-            if self._embedding_mode is None:
-                # Older stores were built with sentence-transformers before modes were persisted.
-                self._embedding_mode = "semantic"
-            self._rebuild_index()
+
+        saved_model_name = model_path.read_text(encoding="utf-8").strip() if model_path.exists() else None
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                manifest_valid = (
+                    manifest.get("chunks_sha256") == _sha256_file(meta_path)
+                    and manifest.get("embeddings_sha256") == (
+                        _sha256_file(emb_path) if emb_path.exists() else None
+                    )
+                    and manifest.get("embedding_mode_sha256") == _sha256_file(mode_path)
+                    and manifest.get("embedding_model_name_sha256") == _sha256_file(model_path)
+                )
+            except (OSError, ValueError, TypeError, AttributeError):
+                manifest_valid = False
+            if not manifest_valid:
+                logger.warning("Persisted index files do not match their manifest; rebuilding vectors from text.")
+                if self._chunks:
+                    self._embedding_mode = "hashed"
+                    self._model = False
+                    self._rehash_existing_chunks()
+                else:
+                    self._embeddings = None
+                    self._index = None
+                    self._use_faiss = False
+                    self._save()
+                return
+
+        if self._chunks:
+            model_changed = (
+                self._embedding_mode == "semantic"
+                and (
+                    saved_model_name is None
+                    or saved_model_name != self.embedding_model_name
+                )
+            )
+            if model_changed:
+                logger.info("Embedding model changed; rebuilding vectors from stored document text.")
+                self._embedding_mode = None
+                self._embeddings = self._embed([chunk.text for chunk in self._chunks])
+                self._rebuild_index()
+                self._save()
+            else:
+                loaded_embeddings = None
+                if emb_path.exists():
+                    try:
+                        candidate = np.load(str(emb_path), allow_pickle=False)
+                        valid = (
+                            candidate.ndim == 2
+                            and candidate.shape[0] == len(self._chunks)
+                            and candidate.shape[1] > 0
+                            and np.issubdtype(candidate.dtype, np.number)
+                            and np.isfinite(candidate).all()
+                        )
+                        if valid:
+                            loaded_embeddings = candidate.astype(np.float32, copy=False)
+                    except (OSError, ValueError, EOFError) as exc:
+                        logger.warning(
+                            "Persisted embeddings could not be loaded; rebuilding from text (%s).",
+                            type(exc).__name__,
+                        )
+                if loaded_embeddings is None:
+                    logger.warning("Persisted embeddings are missing or incompatible; rebuilding from text.")
+                    self._embedding_mode = "hashed"
+                    self._model = False
+                    self._rehash_existing_chunks()
+                else:
+                    self._embeddings = loaded_embeddings
+                    if self._embedding_mode is None:
+                        # Older stores were built with sentence-transformers before modes were persisted.
+                        self._embedding_mode = "semantic"
+                    self._rebuild_index()
+        if self._chunks and not manifest_path.exists():
+            # Migrate older stores to the manifest format after a successful legacy load.
+            self._save()
+        if manifest_path.exists():
+            self._loaded_manifest_sha = _sha256_file(manifest_path)
         logger.info("Loaded vector store with %d chunks", len(self._chunks))

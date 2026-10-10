@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,13 +33,22 @@ class Settings(BaseSettings):
     vectorstore_dir: Path = Path("data/vectorstore")
     conversation_dir: Path = Path("data/conversations")
 
-    top_k: int = 5
-    chunk_size: int = 500
-    chunk_overlap: int = 50
+    top_k: int = Field(default=5, ge=1, le=50)
+    relevance_threshold: float = Field(default=0.15, ge=-1.0, le=1.0)
+    conversation_history_tokens: int = Field(default=2000, ge=0, le=20000)
+    chunk_size: int = Field(default=500, ge=1, le=10000)
+    chunk_overlap: int = Field(default=50, ge=0, le=9999)
+
+    @model_validator(mode="after")
+    def validate_chunking(self) -> Settings:
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunk_overlap must be smaller than chunk_size.")
+        return self
 
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     streamlit_port: int = 8501
+    api_token: str = ""
 
     log_level: str = "INFO"
 

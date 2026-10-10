@@ -8,7 +8,9 @@ import operator
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
+
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,14 @@ def _safe_eval_expr(node: ast.AST) -> float:
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
         return float(node.value)
     if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
-        return _BIN_OPS[type(node.op)](_safe_eval_expr(node.left), _safe_eval_expr(node.right))
+        left = _safe_eval_expr(node.left)
+        right = _safe_eval_expr(node.right)
+        if isinstance(node.op, ast.Pow) and abs(right) > 100:
+            raise ValueError("Exponent magnitude must not exceed 100.")
+        result = _BIN_OPS[type(node.op)](left, right)
+        if not math.isfinite(result):
+            raise ValueError("Arithmetic result is outside the supported numeric range.")
+        return result
     if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
         return _UNARY_OPS[type(node.op)](_safe_eval_expr(node.operand))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
@@ -46,8 +55,16 @@ class ToolResult:
 
 
 class ToolRegistry:
-    def __init__(self, vector_store: Any | None = None) -> None:
+    def __init__(
+        self,
+        vector_store: Any | None = None,
+        *,
+        allowed_image_roots: Iterable[Path] | None = None,
+    ) -> None:
         self._store = vector_store
+        settings = get_settings()
+        roots = allowed_image_roots or (settings.data_dir, settings.upload_dir)
+        self._allowed_image_roots = tuple(Path(root).resolve() for root in roots)
         self._tools: dict[str, Callable[[str], str]] = {
             "calculator": self.calculator,
             "document_search": self.document_search,
@@ -69,9 +86,16 @@ class ToolRegistry:
             return ToolResult(name=name, input=arg, output=str(exc), ok=False)
 
     def calculator(self, expression: str) -> str:
-        tree = ast.parse(expression.strip(), mode="eval")
+        expression = expression.strip()
+        if not expression or len(expression) > 256:
+            raise ValueError("Calculator expressions must contain 1–256 characters.")
+        tree = ast.parse(expression, mode="eval")
+        if sum(1 for _node in ast.walk(tree)) > 64:
+            raise ValueError("Calculator expressions may contain at most 64 syntax nodes.")
         value = _safe_eval_expr(tree)
-        return f"{expression.strip()} = {value}"
+        if not math.isfinite(value):
+            raise ValueError("Arithmetic result is outside the supported numeric range.")
+        return f"{expression} = {value}"
 
     def document_search(self, query: str) -> str:
         if self._store is None or self._store.count() == 0:
@@ -94,20 +118,26 @@ class ToolRegistry:
         return f"Summary: {head}\nKey terms: {key_line}\nLength: {len(text)} chars, ~{len(sentences)} sentences."
 
     def image_analysis(self, path_or_desc: str) -> str:
-        path = Path(path_or_desc.strip().strip("'\""))
-        if not path.exists() or not path.is_file():
-            return f"Image path not found: {path_or_desc}. Provide a local image path."
+        candidate = Path(path_or_desc.strip().strip("'\\\"")).expanduser()
+        try:
+            path = candidate.resolve(strict=True)
+        except (OSError, RuntimeError):
+            return "Image path not found. Provide a local image inside the configured data directory."
+        if not path.is_file():
+            return "The selected image path is not a regular file."
+        if not any(path == root or root in path.parents for root in self._allowed_image_roots):
+            return "Image analysis is restricted to the configured local data directories."
         try:
             from PIL import Image
             with Image.open(path) as img:
                 w, h = img.size
                 mode, fmt = img.mode, (img.format or path.suffix)
             return (
-                f"Image file: {path.name}\nFormat: {fmt}, mode: {mode}, size: {w}x{h} px\n"
+                f"Image file: {path.name}\\nFormat: {fmt}, mode: {mode}, size: {w}x{h} px\\n"
                 "Content: local metadata analysis only. Semantic image understanding is not enabled in this build."
             )
-        except Exception as exc:
-            return f"Could not analyse image: {exc}"
+        except Exception:
+            return "Could not analyse the selected image. Confirm that it is a valid local image file."
 
 
 TOOL_CALL_RE = re.compile(
