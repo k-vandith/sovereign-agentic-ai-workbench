@@ -7,6 +7,10 @@ from typing import Iterator
 
 from pypdf import PdfReader
 from docx import Document as DocxDocument
+from docx.oxml.table import CT_Tbl
+from docx.oxml.text.paragraph import CT_P
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +83,7 @@ def _extract_image(path: Path) -> str:
     except Exception as exc:
         raise ValueError(f"Could not open image file {path.name}. Check that it is a valid image.") from exc
 
+
 def _extract_pdf(path: Path) -> str:
     reader = PdfReader(str(path))
     parts: list[str] = []
@@ -86,12 +91,25 @@ def _extract_pdf(path: Path) -> str:
         text = page.extract_text() or ""
         if text.strip():
             parts.append(f"--- Page {i + 1} ---\n{text}")
-    return "\n\n".join(parts) if parts else f"[PDF {path.name}: no extractable text]"
+    return "\n\n".join(parts) if parts else ""
 
 
 def _extract_docx(path: Path) -> str:
+    """Extract paragraphs and table cells in document order."""
     doc = DocxDocument(str(path))
-    return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+    parts: list[str] = []
+    for block in doc.element.body.iterchildren():
+        if isinstance(block, CT_P):
+            text = Paragraph(block, doc).text.strip()
+            if text:
+                parts.append(text)
+        elif isinstance(block, CT_Tbl):
+            table = Table(block, doc)
+            for row in table.rows:
+                cells = [cell.text.strip().replace("\n", " / ") for cell in row.cells]
+                if any(cells):
+                    parts.append(" | ".join(cells))
+    return "\n".join(parts)
 
 
 def chunk_text(
@@ -100,6 +118,12 @@ def chunk_text(
     overlap: int = 50,
 ) -> list[str]:
     """Split text into overlapping chunks by character count."""
+    if isinstance(chunk_size, bool) or not isinstance(chunk_size, int) or chunk_size <= 0:
+        raise ValueError("chunk_size must be a positive integer.")
+    if isinstance(overlap, bool) or not isinstance(overlap, int) or overlap < 0:
+        raise ValueError("overlap must be a non-negative integer.")
+    if overlap >= chunk_size:
+        raise ValueError("overlap must be smaller than chunk_size.")
     if not text or not text.strip():
         return []
     text = text.strip()
@@ -130,7 +154,7 @@ def chunk_text(
 def iter_supported_files(directory: Path) -> Iterator[Path]:
     """Yield supported files under a directory."""
     for p in directory.rglob("*"):
-        if p.is_file() and p.suffix.lower() in (
+        if not p.is_symlink() and p.is_file() and p.suffix.lower() in (
             SUPPORTED_TEXT | SUPPORTED_PDF | SUPPORTED_DOCX | SUPPORTED_IMAGE
         ):
             yield p

@@ -21,7 +21,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
-REQ = ROOT / "requirements.txt"
+REQ = ROOT / "requirements-dev.txt"
 IS_WIN = platform.system() == "Windows"
 
 

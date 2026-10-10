@@ -82,9 +82,9 @@ def build_answer_pdf(
             Paragraph(f"Backend: {xml_escape(str(backend))}", styles["BodyText"]),
             Spacer(1, 10),
             Paragraph("Question", styles["Heading2"]),
-            Paragraph(xml_escape(str(question)).replace("\\n", "<br/>"), styles["WBBody"]),
+            Paragraph(xml_escape(str(question)).replace("\n", "<br/>"), styles["WBBody"]),
             Paragraph("Answer", styles["Heading2"]),
-            Paragraph(xml_escape(str(answer)).replace("\\n", "<br/>"), styles["WBBody"]),
+            Paragraph(xml_escape(str(answer)).replace("\n", "<br/>"), styles["WBBody"]),
             Paragraph("Source evidence", styles["Heading2"]),
         ]
         source_rows = [[Paragraph("Document", styles["BodyText"]), Paragraph("Score", styles["BodyText"]), Paragraph("Excerpt", styles["BodyText"])]]
@@ -130,10 +130,18 @@ def build_sample_archive(sample_dir: Path) -> bytes:
     buffer = BytesIO()
     files = []
     if sample_dir.is_dir():
-        files = sorted(
-            path for path in sample_dir.rglob("*")
-            if path.is_file() and path.suffix.lower() in {".pdf", ".docx", ".txt", ".md", ".csv", ".json", ".log"}
-        )
+        root = sample_dir.resolve()
+        for path in sample_dir.rglob("*"):
+            if path.is_symlink() or not path.is_file():
+                continue
+            if path.suffix.lower() not in {".pdf", ".docx", ".txt", ".md", ".csv", ".json", ".log"}:
+                continue
+            try:
+                path.resolve().relative_to(root)
+            except ValueError:
+                continue
+            files.append(path)
+        files.sort()
     with ZipFile(buffer, "w", compression=ZIP_DEFLATED) as archive:
         if files:
             for path in files:
@@ -141,6 +149,6 @@ def build_sample_archive(sample_dir: Path) -> bytes:
         else:
             archive.writestr(
                 "sample_process_note.txt",
-                "Fictional sample note\\nThe pump unit should be inspected every 2,000 operating hours.\\n",
+                "Fictional sample note\nThe pump unit should be inspected every 2,000 operating hours.\n",
             )
     return buffer.getvalue()
