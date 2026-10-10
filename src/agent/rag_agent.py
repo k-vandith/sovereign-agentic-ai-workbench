@@ -66,7 +66,11 @@ class RAGAgent:
         )
         self.llm = llm or get_llm()
         self.tools = ToolRegistry(vector_store=self.store)
-        self.principal = principal or Principal(name="default", role=Role.OPERATOR)
+        try:
+            configured_role = Role(str(settings.default_role).strip().lower())
+        except ValueError:
+            configured_role = Role.OPERATOR
+        self.principal = principal or Principal(name="local-user", role=configured_role)
         self.audit = audit or AuditLog(path=settings.data_dir / "audit" / "audit.jsonl")
         self.max_tool_rounds = max_tool_rounds
         self.conversations: dict[str, Conversation] = {}
@@ -82,7 +86,7 @@ class RAGAgent:
                 id=f"{path.stem}_{i}",
                 text=c,
                 source=str(path.name),
-                metadata={"path": str(path), "chunk_index": i},
+                metadata={"path": path.name, "chunk_index": i},
             )
             for i, c in enumerate(chunks_raw)
         ]

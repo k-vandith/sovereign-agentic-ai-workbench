@@ -38,3 +38,13 @@ def test_extract_unsupported(tmp_path: Path):
 def test_extract_missing():
     with pytest.raises(FileNotFoundError):
         extract_text_from_file(Path("/nonexistent/file.txt"))
+
+
+def test_extract_image_registers_metadata_or_optional_ocr(tmp_path: Path):
+    from PIL import Image
+
+    path = tmp_path / "tiny.png"
+    Image.new("RGB", (2, 2), color=(0, 0, 0)).save(path)
+    text = extract_text_from_file(path)
+    assert "Image file: tiny.png" in text
+    assert "2x2 px" in text
