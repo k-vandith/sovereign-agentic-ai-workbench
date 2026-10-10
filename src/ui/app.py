@@ -513,11 +513,14 @@ def _render_settings(agent: RAGAgent, model_available: bool) -> None:
         st.code("LLM_BACKEND=demo\n# or\nLLM_BACKEND=ollama\nOLLAMA_MODEL=llama3.2:1b", language="dotenv")
 
     section("Optional capability status", "Some features need extra packages or local system tools. Missing features are described rather than silently substituted.")
+    semantic_installed = importlib.util.find_spec("sentence_transformers") is not None
+    semantic_active = agent.store.embedding_status().startswith("Semantic embeddings (CPU)")
     capabilities = [
-        ("CPU sentence embeddings", importlib.util.find_spec("sentence_transformers") is not None, "Installed with the base requirements; first use may download the configured model weights."),
-        ("FAISS vector index", importlib.util.find_spec("faiss") is not None, "When unavailable, the vector store uses its NumPy similarity fallback."),
-        ("PDF answer reports", importlib.util.find_spec("reportlab") is not None, "Enable with pip install '.[reports]' from the repository root."),
-        ("Image OCR", importlib.util.find_spec("pytesseract") is not None and shutil.which("tesseract") is not None, "Not active by default. Install Tesseract OCR and pytesseract to extract text from image files."),
+        ("Hashed-text retrieval (CPU)", True, "Default mode. Uses deterministic local word/bigram features and requires no model download."),
+        ("Semantic embeddings (CPU)", semantic_active, "Optional: first install PyTorch from the CPU-only wheel index, then run pip install -e '.[embeddings]'. Cache model weights before using in a disconnected environment."),
+        ("FAISS vector index", importlib.util.find_spec("faiss") is not None, "When unavailable, the vector store uses its NumPy cosine-similarity fallback."),
+        ("PDF answer reports", importlib.util.find_spec("reportlab") is not None, "Enable with pip install -e '.[reports]' from the repository root."),
+        ("Image OCR", importlib.util.find_spec("pytesseract") is not None and shutil.which("tesseract") is not None, "Not active by default. Install Tesseract OCR and the optional OCR extra to extract text from image files."),
         ("Ollama local generation", isinstance(agent.llm, OllamaLLM) and model_available, "Install Ollama locally, pull the configured model, then select it from the sidebar."),
     ]
     st.dataframe(
