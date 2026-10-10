@@ -14,7 +14,7 @@ from src.agent import RAGAgent
 from src.config import get_settings
 from src.document.io import build_answer_pdf, build_answer_report, build_sample_archive
 from src.document.uploads import ingest_uploaded_files
-from src.llm import DemoLLM, OpenAICompatibleLLM
+from src.llm import OpenAICompatibleLLM
 from src.ui.components import brand_header, page_intro, section
 from src.ui.theme import get_css
 
@@ -86,7 +86,7 @@ def _render_load_sample(agent: RAGAgent, button_key: str = "wb_load_sample") -> 
         st.session_state["wb_ingest_results"] = summary.get("details", [])
         successful = sum(1 for item in summary.get("details", []) if "error" not in item)
         if successful:
-            st.session_state["wb_sample_notice"] = f"Indexed {successful} sample document(s). You can now ask a question in Chat & Evidence."
+            st.session_state["wb_sample_notice"] = f"Indexed {successful} sample document(s). You can now ask a question in Workspace."
         else:
             st.session_state["wb_sample_notice"] = "The sample pack could not be loaded. Check the result details."
         st.rerun()
@@ -497,7 +497,6 @@ def main() -> None:
         st.radio("Go to", PAGES, key="wb_page")
         st.divider()
         st.caption(f"{len(agent.store.list_sources())} documents · {agent.store.count()} passages")
-        st.markdown(_status_pills(agent, model_available), unsafe_allow_html=True)
 
     page = st.session_state["wb_page"]
     brand_header(page, _status_pills(agent, model_available))
