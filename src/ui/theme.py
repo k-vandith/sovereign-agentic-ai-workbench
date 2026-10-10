@@ -8,10 +8,10 @@ _BASE_CSS = _STYLE_PATH.read_text(encoding="utf-8")
 
 _DARK = """
 :root {
-  --wb-bg:#0b1118; --wb-surface:#121c27; --wb-surface-2:#172433;
-  --wb-text:#eaf2f8; --wb-muted:#a1b2c2; --wb-border:#2b3d4d;
-  --wb-accent:#55c7d9; --wb-accent-strong:#9beaf4; --wb-accent-soft:#173944;
-  --wb-success:#67d8a5; --wb-warning:#ffcf7d; --wb-danger:#ff929a;
+  --wb-bg:#0e100d; --wb-surface:#161a14; --wb-surface-2:#1d2319;
+  --wb-text:#f0f2e8; --wb-muted:#a6ae9d; --wb-border:#30382a;
+  --wb-accent:#d4ff59; --wb-accent-strong:#eaffb0; --wb-accent-soft:#28341a;
+  --wb-success:#9ad9a2; --wb-warning:#f5c36a; --wb-danger:#ff929a;
 }
 """
 
@@ -42,7 +42,7 @@ def plotly_template(mode: str = "dark") -> dict:
             "plot_bgcolor": "rgba(0,0,0,0)",
             "font": {"family": 'Inter, "Segoe UI", sans-serif', "color": "#172532" if light else "#eaf2f8"},
             "title": {"font": {"size": 17}},
-            "colorway": ["#087f91", "#7c5ce7", "#2e9a72", "#c17b21", "#d45d79"] if light else ["#55c7d9", "#a49aff", "#67d8a5", "#ffcf7d", "#ff929a"],
+            "colorway": ["#087f91", "#7c5ce7", "#2e9a72", "#c17b21", "#d45d79"] if light else ["#d4ff59", "#9ad9a2", "#f5c36a", "#b4a4ff", "#ff929a"],
             "xaxis": {"gridcolor": "#dce5ec" if light else "#253545", "zerolinecolor": "#c8d6df" if light else "#253545"},
             "yaxis": {"gridcolor": "#dce5ec" if light else "#253545", "zerolinecolor": "#c8d6df" if light else "#253545"},
             "margin": {"l": 12, "r": 12, "t": 42, "b": 12},
