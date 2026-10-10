@@ -104,6 +104,26 @@ class LocalVectorStore:
         self._index = None
         self._save()
 
+    def list_sources(self) -> list[dict[str, Any]]:
+        """Return a safe summary of documents represented in the local index."""
+        summaries: dict[str, dict[str, Any]] = {}
+        for chunk in self._chunks:
+            name = Path(chunk.source).name or "Untitled document"
+            item = summaries.setdefault(
+                name,
+                {"source": name, "chunks": 0, "preview": "", "pages": set()},
+            )
+            item["chunks"] += 1
+            if not item["preview"] and chunk.text.strip():
+                item["preview"] = " ".join(chunk.text.split())[:220]
+            if chunk.page is not None:
+                item["pages"].add(chunk.page)
+        result = []
+        for item in summaries.values():
+            item["pages"] = len(item["pages"])
+            result.append(item)
+        return sorted(result, key=lambda item: item["source"].casefold())
+
     def count(self) -> int:
         return len(self._chunks)
 
