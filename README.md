@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/workbench-mark.svg" alt="Sovereign Workbench logo" width="88" />
+</p>
+
 # Sovereign Workbench
 
 **A quieter workspace for answers grounded in your documents.**
