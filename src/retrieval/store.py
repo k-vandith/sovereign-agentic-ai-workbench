@@ -44,6 +44,7 @@ class LocalVectorStore:
         self.embedding_model_name = embedding_model_name
         self._model = None
         self._semantic_status = "not checked"
+        self._embedding_mode: str | None = None
         self._index = None
         self._chunks: list[DocumentChunk] = []
         self._embeddings: np.ndarray | None = None
@@ -51,7 +52,7 @@ class LocalVectorStore:
         self._load()
 
     @staticmethod
-    def _hashed_text_embeddings(texts: list[str], dimensions: int = 768) -> np.ndarray:
+    def _hashed_text_embeddings(texts: list[str], dimensions: int = 384) -> np.ndarray:
         """Create deterministic CPU-only token and bigram vectors without model files."""
         matrix = np.zeros((len(texts), dimensions), dtype=np.float32)
         for row_index, text in enumerate(texts):
@@ -67,23 +68,43 @@ class LocalVectorStore:
                 matrix[row_index] /= norm
         return matrix
 
+    def _rehash_existing_chunks(self) -> None:
+        """Rebuild an existing store if its previous semantic backend is no longer available."""
+        if not self._chunks:
+            self._embedding_mode = "hashed"
+            return
+        self._embeddings = self._hashed_text_embeddings([chunk.text for chunk in self._chunks])
+        self._embedding_mode = "hashed"
+        self._semantic_status = "not installed; using hashed-text retrieval"
+        self._rebuild_index()
+        self._save()
+
     def _get_model(self):
-        if self._model is False:
+        if self._embedding_mode == "hashed" or self._model is False:
             return None
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
             except ImportError:
                 self._model = False
-                self._semantic_status = "not installed"
+                if self._embedding_mode == "semantic":
+                    self._rehash_existing_chunks()
+                else:
+                    self._embedding_mode = "hashed"
+                self._semantic_status = "not installed; using hashed-text retrieval"
                 logger.info("sentence-transformers is not installed; using hashed-text retrieval.")
                 return None
             try:
                 logger.info("Loading embedding model: %s", self.embedding_model_name)
                 self._model = SentenceTransformer(self.embedding_model_name, device="cpu")
+                self._embedding_mode = "semantic"
                 self._semantic_status = "active"
             except Exception as exc:
                 self._model = False
+                if self._embedding_mode == "semantic":
+                    self._rehash_existing_chunks()
+                else:
+                    self._embedding_mode = "hashed"
                 self._semantic_status = "unavailable; using hashed-text retrieval"
                 logger.warning("Semantic embedding model unavailable; using hashed-text retrieval: %s", exc)
                 return None
@@ -208,18 +229,27 @@ class LocalVectorStore:
     def _save(self) -> None:
         meta_path = self.persist_dir / "chunks.json"
         emb_path = self.persist_dir / "embeddings.npy"
+        mode_path = self.persist_dir / "embedding_mode.txt"
         data = [asdict(c) for c in self._chunks]
         meta_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         if self._embeddings is not None:
             np.save(str(emb_path), self._embeddings)
+        mode_path.write_text(self._embedding_mode or "unknown", encoding="utf-8")
 
     def _load(self) -> None:
         meta_path = self.persist_dir / "chunks.json"
         emb_path = self.persist_dir / "embeddings.npy"
+        mode_path = self.persist_dir / "embedding_mode.txt"
         if meta_path.exists():
             raw = json.loads(meta_path.read_text(encoding="utf-8"))
             self._chunks = [DocumentChunk(**item) for item in raw]
+        if mode_path.exists():
+            saved_mode = mode_path.read_text(encoding="utf-8").strip()
+            self._embedding_mode = saved_mode if saved_mode in {"semantic", "hashed"} else None
         if emb_path.exists() and self._chunks:
             self._embeddings = np.load(str(emb_path))
+            if self._embedding_mode is None:
+                # Older stores were built with sentence-transformers before modes were persisted.
+                self._embedding_mode = "semantic"
             self._rebuild_index()
         logger.info("Loaded vector store with %d chunks", len(self._chunks))
