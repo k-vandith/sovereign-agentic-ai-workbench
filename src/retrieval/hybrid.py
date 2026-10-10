@@ -216,6 +216,7 @@ class HybridVectorStore(LocalVectorStore):
         if self._model is not None:
             return self._model
         disabled = os.getenv("FASTEMBED_DISABLE", "").strip().lower() in {"1", "true", "yes", "on"}
+        previous_mode = self._embedding_mode
         try:
             if disabled:
                 raise ImportError("FastEmbed was disabled by FASTEMBED_DISABLE")
@@ -228,6 +229,16 @@ class HybridVectorStore(LocalVectorStore):
             self._embedding_mode = "semantic"
             self._semantic_status = "FastEmbed ONNX model active on CPU"
             self._model_error = None
+
+            # A persisted hashed index cannot be searched with semantic query vectors.
+            # Re-embed all existing passages together before using the newly available model.
+            if previous_mode == "hashed" and self._chunks:
+                refreshed_embeddings = self._embed([chunk.text for chunk in self._chunks])
+                if self._embedding_mode != "semantic" or self._model is False:
+                    return None
+                self._embeddings = refreshed_embeddings
+                self._rebuild_index()
+                self._save()
             return self._model
         except Exception as exc:
             self._model = False

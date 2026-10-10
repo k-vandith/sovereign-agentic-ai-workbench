@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
+from types import SimpleNamespace
 
 from src.retrieval import DocumentChunk, HybridVectorStore, calibrate_relevance_threshold
 
@@ -64,3 +66,41 @@ def test_default_calibrated_threshold_is_cached_and_bounded(tmp_path: Path, monk
     second = store.calibrate_threshold()
     assert 0.0 <= first <= 1.0
     assert first == second
+
+
+def test_existing_hashed_index_is_reembedded_when_fastembed_becomes_available(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setenv("FASTEMBED_DISABLE", "1")
+    path = tmp_path / "persisted"
+    initial = HybridVectorStore(persist_dir=path)
+    text = "Valve V-417 maximum working pressure is 38.5 bar."
+    initial.add_documents([DocumentChunk(id="v417", text=text, source="valves.txt")])
+    assert initial._embedding_mode == "hashed"
+
+    calls = []
+
+    class FakeTextEmbedding:
+        def __init__(self, model_name: str, providers: list[str]):
+            assert model_name == "BAAI/bge-small-en-v1.5"
+            assert providers == ["CPUExecutionProvider"]
+
+        def embed(self, passages, batch_size: int = 64):
+            calls.extend(passages)
+            return iter(LocalVectorStore._hashed_text_embeddings(list(passages)))
+
+        def query_embed(self, queries):
+            return iter(LocalVectorStore._hashed_text_embeddings(list(queries)))
+
+    from src.retrieval import LocalVectorStore
+
+    monkeypatch.delenv("FASTEMBED_DISABLE", raising=False)
+    monkeypatch.setitem(sys.modules, "fastembed", SimpleNamespace(TextEmbedding=FakeTextEmbedding))
+    migrated = HybridVectorStore(persist_dir=path)
+    migrated.calibrate_threshold()
+
+    assert migrated._embedding_mode == "semantic"
+    assert any(text in passage for passage in calls)
+    assert migrated.count() == 1
+    matches = migrated.search("maximum working pressure for valve V-417", top_k=1)
+    assert matches and matches[0][0].source == "valves.txt"
