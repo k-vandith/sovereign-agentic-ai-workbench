@@ -15,6 +15,7 @@ for i in range(60):  # near-duplicate distractors
     (p/f"log{i}.txt").write_text(f"Maintenance log {i}: inspected valve V-{500+i} pressure test at {20+i%9}.5 bar, pump P-{300+i} flow {80+i} cubic metres per hour, no leaks found.")
 a = RAGAgent()
 a.ingest_directory(p)
+print(f"EMBEDDING BACKEND: {a.store.embedding_status()}")
 valid = [  # (question, expected file, expected substring)
  ("What is the maximum working pressure of valve V-417?", "valves.txt", "38.5"),
  ("how much pressure can V-418 take", "valves.txt", "41.0"),
@@ -49,3 +50,14 @@ for q in oos:
     r = a.query(q, use_tools=False); nfq = r["answer"].startswith("Not found"); bad += (not nfq)
     print(f"  {'OK ' if nfq else 'ANSWERED'} | {q} -> {[x['source'] for x in r['sources']][:2]}")
 print(f"out-of-scope answered instead of not-found: {bad}/{len(oos)}")
+print("RETRIEVAL QUALITY GATES")
+checks = [
+    (ok1 >= 10, f"top-1 correct source: {ok1}/12; minimum 10/12"),
+    (nf <= 1, f"valid questions wrongly not-found: {nf}/12; maximum 1/12"),
+    (bad <= 1, f"out-of-scope questions answered: {bad}/8; maximum 1/8"),
+]
+for passed, detail in checks:
+    print(f"  {'PASS' if passed else 'FAIL'} {detail}")
+if not all(passed for passed, _detail in checks):
+    raise SystemExit(1)
+print("RETRIEVAL QUALITY GATES: PASS")

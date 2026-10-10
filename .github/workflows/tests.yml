@@ -31,11 +31,34 @@ jobs:
         run: pip-audit -r requirements.txt --progress-spinner off
       - name: Retrieval QA harness
         run: PYTHONPATH=. python scripts/qa_retrieval_harness.py
-      - name: Retrieval quality baseline (report only while calibrating)
-        continue-on-error: true
-        run: PYTHONPATH=. python scripts/qa_retrieval_quality_harness.py
       - name: Run tests
         run: pytest -v
         env:
           LLM_BACKEND: demo
           PYTHONPATH: .
+
+  retrieval-quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        embedding_mode: ["fastembed", "missing"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Exercise missing-embedding fallback
+        if: matrix.embedding_mode == 'missing'
+        run: pip uninstall -y fastembed
+      - name: Calibrate relevance threshold on dev set
+        run: PYTHONPATH=. python scripts/calibrate_retrieval_threshold.py
+      - name: Run held-out retrieval quality gates
+        run: PYTHONPATH=. python scripts/qa_retrieval_quality_harness.py
