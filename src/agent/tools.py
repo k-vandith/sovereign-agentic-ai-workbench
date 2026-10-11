@@ -122,22 +122,30 @@ class ToolRegistry:
         try:
             path = candidate.resolve(strict=True)
         except (OSError, RuntimeError):
-            return "Image path not found. Provide a local image inside the configured data directory."
+            raise ValueError(
+                "Image path not found. Provide a local image inside the configured data directory."
+            )
         if not path.is_file():
-            return "The selected image path is not a regular file."
+            raise ValueError("The selected image path is not a regular file.")
         if not any(path == root or root in path.parents for root in self._allowed_image_roots):
-            return "Image analysis is restricted to the configured local data directories."
+            raise ValueError(
+                "Image analysis is restricted to the configured local data directories."
+            )
         try:
             from PIL import Image
             with Image.open(path) as img:
                 w, h = img.size
                 mode, fmt = img.mode, (img.format or path.suffix)
             return (
-                f"Image file: {path.name}\\nFormat: {fmt}, mode: {mode}, size: {w}x{h} px\\n"
+                f"Image file: {path.name}\nFormat: {fmt}, mode: {mode}, size: {w}x{h} px\n"
                 "Content: local metadata analysis only. Semantic image understanding is not enabled in this build."
             )
-        except Exception:
-            return "Could not analyse the selected image. Confirm that it is a valid local image file."
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(
+                "Could not analyse the selected image. Confirm that it is a valid local image file."
+            ) from exc
 
 
 TOOL_CALL_RE = re.compile(
@@ -148,3 +156,33 @@ TOOL_CALL_RE = re.compile(
 
 def parse_tool_calls(text: str) -> list[tuple[str, str]]:
     return [(m.group("name").lower(), m.group("arg").strip()) for m in TOOL_CALL_RE.finditer(text)]
+
+
+def strip_evidence_tool_lines(answer: str, evidence: str) -> str:
+    """Remove TOOL: lines from the answer that also appear inside untrusted evidence.
+
+    Preview/demo mode echoes retrieved passages. If a document contains a
+    ``TOOL:`` payload, that line must not be treated as a model tool request.
+    Only TOOL lines that the model emitted outside the evidence block are kept.
+    """
+    if not answer or not evidence:
+        return answer or ""
+    evidence_lower = evidence.casefold()
+    kept: list[str] = []
+    for line in answer.splitlines(keepends=True):
+        stripped = line.strip()
+        if TOOL_CALL_RE.match(stripped):
+            # Drop the line when the same TOOL payload appears in evidence.
+            if stripped.casefold() in evidence_lower or any(
+                part.casefold() in evidence_lower
+                for part in (stripped,)
+                if part
+            ):
+                # More precise: any TOOL: line whose arg appears in evidence is suspect.
+                match = TOOL_CALL_RE.match(stripped)
+                if match and match.group("arg").strip().casefold() in evidence_lower:
+                    continue
+                if stripped.casefold() in evidence_lower:
+                    continue
+        kept.append(line)
+    return "".join(kept)
