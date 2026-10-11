@@ -98,11 +98,13 @@ def test_image_analysis_only_reads_images_inside_allowed_roots(tmp_path: Path):
     Image.new("RGB", (10, 10)).save(outside_image)
 
     registry = ToolRegistry(allowed_image_roots=[allowed])
-    safe_result = registry.image_analysis(str(safe_image))
-    outside_result = registry.image_analysis(str(outside_image))
+    safe_result = registry.run("image_analysis", str(safe_image))
+    outside_result = registry.run("image_analysis", str(outside_image))
 
-    assert "3x4 px" in safe_result
-    assert "restricted to the configured local data directories" in outside_result
+    assert safe_result.ok is True
+    assert "3x4 px" in safe_result.output
+    assert outside_result.ok is False
+    assert "restricted to the configured local data directories" in outside_result.output
 
 
 def test_image_analysis_rejects_symlink_outside_allowed_root(tmp_path: Path):
@@ -118,9 +120,10 @@ def test_image_analysis_rejects_symlink_outside_allowed_root(tmp_path: Path):
     except (OSError, NotImplementedError):
         pytest.skip("Symlinks are not available in this environment.")
 
-    result = ToolRegistry(allowed_image_roots=[allowed]).image_analysis(str(link))
+    result = ToolRegistry(allowed_image_roots=[allowed]).run("image_analysis", str(link))
 
-    assert "restricted to the configured local data directories" in result
+    assert result.ok is False
+    assert "restricted to the configured local data directories" in result.output
 
 
 
@@ -196,3 +199,20 @@ def test_audit_chain_remains_valid_with_concurrent_instances(tmp_path: Path):
     assert result["valid"] is True
     assert result["checked_entries"] == 40
     assert result["legacy_entries"] == 0
+
+
+def test_audit_tail_deletion_fails_verify(tmp_path: Path):
+    """Deleting the last chained line must invalidate the log (WB-07)."""
+    audit = AuditLog(path=tmp_path / "tail-audit.jsonl")
+    audit.record("first", value="one")
+    audit.record("second", value="two")
+    audit.record("third", value="three")
+    assert audit.verify()["valid"] is True
+    assert audit.verify()["checked_entries"] == 3
+
+    lines = audit.path.read_text(encoding="utf-8").splitlines()
+    audit.path.write_text("\n".join(lines[:-1]) + "\n", encoding="utf-8")
+
+    result = audit.verify()
+    assert result["valid"] is False
+    assert "tail" in (result.get("error") or "").lower() or "mismatch" in (result.get("error") or "").lower()
