@@ -47,11 +47,17 @@ def _exclusive_audit_lock(path: Path):
 
 
 class AuditLog:
-    """Thread-safe JSONL audit log with SHA-256 tamper-evidence chaining."""
+    """Thread-safe JSONL audit log with SHA-256 tamper-evidence chaining.
+
+    A separate head file stores the latest hash and entry count so that
+    truncating the tail of the log is detectable (the in-file chain alone
+    would still validate any prefix).
+    """
 
     def __init__(self, path: Path | None = None) -> None:
         self.path = path or Path("data/audit/audit.jsonl")
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.head_path = self.path.with_suffix(self.path.suffix + ".head")
         self._lock = threading.Lock()
 
     @staticmethod
@@ -68,6 +74,31 @@ class AuditLog:
     @staticmethod
     def _legacy_anchor(raw_prefix: bytes) -> str:
         return hashlib.sha256(_LEGACY_PREFIX_DOMAIN + raw_prefix).hexdigest()
+
+    def _read_head(self) -> dict[str, Any] | None:
+        if not self.head_path.exists():
+            return None
+        try:
+            data = json.loads(self.head_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+            return None
+        if not isinstance(data, dict):
+            return None
+        return data
+
+    def _write_head(self, head_hash: str | None, entry_count: int) -> None:
+        payload = {
+            "head_hash": head_hash,
+            "entry_count": int(entry_count),
+            "ts": datetime.now(timezone.utc).isoformat(),
+        }
+        encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        temporary = self.head_path.with_suffix(self.head_path.suffix + ".tmp")
+        try:
+            temporary.write_bytes(encoded)
+            temporary.replace(self.head_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def _verify_bytes(self, raw: bytes) -> dict[str, Any]:
         previous_hash: str | None = None
@@ -151,6 +182,37 @@ class AuditLog:
             checked_entries += 1
             chain_started = True
 
+        # External head anchor: detect tail truncation that would still form a
+        # valid in-file prefix chain (or a fully emptied log).
+        stored_head = self._read_head()
+        if stored_head is not None:
+            expected_count = stored_head.get("entry_count")
+            expected_hash = stored_head.get("head_hash")
+            if isinstance(expected_count, int) and expected_count != checked_entries:
+                return {
+                    "valid": False,
+                    "checked_entries": checked_entries,
+                    "legacy_entries": legacy_entries,
+                    "head_hash": previous_hash,
+                    "error": (
+                        f"Audit head mismatch: log has {checked_entries} chained entries "
+                        f"but head records {expected_count} (possible tail truncation)."
+                    ),
+                }
+            if (
+                isinstance(expected_hash, str)
+                and expected_hash
+                and previous_hash is not None
+                and not hmac.compare_digest(expected_hash, previous_hash)
+            ):
+                return {
+                    "valid": False,
+                    "checked_entries": checked_entries,
+                    "legacy_entries": legacy_entries,
+                    "head_hash": previous_hash,
+                    "error": "Audit head hash does not match the last chained entry.",
+                }
+
         if legacy_entries and not chain_started:
             message = (
                 "Legacy entries have no individual hashes yet; they will be anchored "
@@ -201,6 +263,8 @@ class AuditLog:
             with self.path.open("ab") as stream:
                 stream.write(encoded)
                 stream.flush()
+            new_count = int(status["checked_entries"]) + 1
+            self._write_head(entry["hash"], new_count)
             return entry
 
     def verify(self) -> dict[str, Any]:
