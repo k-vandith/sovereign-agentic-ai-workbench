@@ -46,17 +46,41 @@ def test_unknown_equipment_identifier_is_not_retrieved(tmp_path: Path, monkeypat
     assert store.search("flow rate of pump P-999", top_k=5) == []
 
 
-def test_unindexed_named_entity_does_not_borrow_similar_passage(tmp_path: Path, monkeypatch):
+def test_extra_capitalised_words_do_not_wipe_indexed_id_hits(tmp_path: Path, monkeypatch):
+    """'Kilnshire' / 'lot 42' / 'page 4' must not discard a real equipment-ID hit (WB-03)."""
     monkeypatch.setenv("FASTEMBED_DISABLE", "1")
     store = HybridVectorStore(persist_dir=tmp_path / "vectors")
     store.add_documents([
         DocumentChunk(
-            id="v417",
-            text="Valve V-417 maximum working pressure is 38.5 bar.",
-            source="valves.txt",
+            id="vx",
+            text="Valve VX-8841 maximum working pressure is 27.3 bar.",
+            source="manuals/valves.txt",
         )
     ])
-    assert store.search("What is the maximum working pressure of the Eiffel Tower?", top_k=5) == []
+    for question in (
+        "What is valve VX-8841 maximum pressure for lot 42?",
+        "According to the Kilnshire dossier, what is valve VX-8841 maximum pressure?",
+        "VX-8841 maximum pressure see page 4",
+    ):
+        hits = store.search(question, top_k=5)
+        assert hits, f"expected a hit for: {question}"
+        assert hits[0][0].source == "manuals/valves.txt"
+        assert "27.3" in hits[0][0].text
+
+
+def test_equipment_id_restricts_results_to_matching_chunks(tmp_path: Path, monkeypatch):
+    """When the question names an indexed ID, only passages containing it rank (WB-02)."""
+    monkeypatch.setenv("FASTEMBED_DISABLE", "1")
+    store = HybridVectorStore(persist_dir=tmp_path / "vectors")
+    store.add_documents([
+        DocumentChunk(id="a", text="Valve VZ-100 maximum pressure is 80.0 bar.", source="conflict/a.txt"),
+        DocumentChunk(id="b", text="Valve VQ-303 maximum pressure is 19.8 bar.", source="i18n/jp.txt"),
+    ])
+    hits = store.search("maximum pressure of valve VQ-303?", top_k=5)
+    assert hits
+    assert all("VQ-303" in h[0].text or "VQ303" in h[0].text.upper().replace("-", "") for h in hits)
+    assert hits[0][0].source == "i18n/jp.txt"
+    assert "19.8" in hits[0][0].text
 
 
 def test_default_calibrated_threshold_is_cached_and_bounded(tmp_path: Path, monkeypatch):

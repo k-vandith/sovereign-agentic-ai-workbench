@@ -16,9 +16,11 @@ from .store import DocumentChunk, LocalVectorStore
 logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "BAAI/bge-small-en-v1.5"
-_CALIBRATION_VERSION = "hybrid-dev-v1"
+_CALIBRATION_VERSION = "hybrid-dev-v2"
 _TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-./][a-z0-9]+)*", re.IGNORECASE)
-_IDENTIFIER_RE = re.compile(r"\b([A-Z]{1,4})[-\s]?(\d{1,6}[A-Z]?)\b", re.IGNORECASE)
+# Only hyphenated equipment-style IDs (VX-8841, TT-205A, V-517). Never match
+# "lot 42", "page 4", or bare letter+digit runs without a hyphen.
+_IDENTIFIER_RE = re.compile(r"\b([A-Za-z]{1,4})-(\d{1,6}[A-Za-z]?)\b")
 _TITLE_WORD_RE = re.compile(r"\b[A-Z][a-z]{2,}\b")
 
 _STOP_WORDS = {
@@ -50,7 +52,8 @@ _DEV_DOCUMENTS = [
     ("dev_relay.txt", "Relay RY-719 trips at a pressure of 5.8 bar."),
 ]
 _DEV_VALID = [
-    ("how much pressure can valve V-518 handle", "dev_valves.txt"),
+    # V-517 is the valve that actually states a pressure (34.5 bar); V-518 is only location.
+    ("how much pressure can valve V-517 handle", "dev_valves.txt"),
     ("which tank does pump P-604 feed", "dev_pumps.txt"),
     ("what should operators do during an ammonia leak", "dev_safety.txt"),
     ("how long must recipe RR-31 be heated", "dev_recipe.txt"),
@@ -308,26 +311,31 @@ class HybridVectorStore(LocalVectorStore):
 
     @staticmethod
     def _reference_ids(text: str) -> set[str]:
+        """Return normalised hyphenated equipment IDs found in text (e.g. VX-8841 → VX8841)."""
         return {f"{match.group(1)}{match.group(2)}".upper() for match in _IDENTIFIER_RE.finditer(text)}
 
     def _question_has_missing_reference(self, question: str) -> bool:
+        """Abstain only when a hyphenated equipment ID is named but absent from the corpus."""
         mentioned = self._reference_ids(question)
         if not mentioned:
             return False
         indexed = self._reference_ids(" ".join(chunk.text for chunk in self._chunks))
         return any(identifier not in indexed for identifier in mentioned)
 
-    def _question_has_missing_named_entity(self, question: str) -> bool:
-        corpus = " ".join(chunk.text for chunk in self._chunks).casefold()
-        for match in _TITLE_WORD_RE.finditer(question):
-            if match.start() == 0:
-                continue
-            word = match.group(0)
-            if word.casefold() in _TITLE_GENERIC_WORDS:
-                continue
-            if word.casefold() not in corpus:
-                return True
-        return False
+    def _chunks_containing_ids(
+        self,
+        chunks: list[DocumentChunk],
+        required_ids: set[str],
+    ) -> list[int]:
+        """Return indices of chunks that contain every required equipment ID."""
+        if not required_ids:
+            return list(range(len(chunks)))
+        indices: list[int] = []
+        for index, chunk in enumerate(chunks):
+            chunk_ids = self._reference_ids(chunk.text)
+            if required_ids.issubset(chunk_ids):
+                indices.append(index)
+        return indices
 
     def _score_documents(
         self,
@@ -352,12 +360,25 @@ class HybridVectorStore(LocalVectorStore):
             raise ValueError("top_k must be a positive integer.")
         if not self._chunks or self._embeddings is None:
             return []
-        if self._question_has_missing_reference(query) or self._question_has_missing_named_entity(query):
+        # Hard abstain only for missing *hyphenated equipment* IDs (V-999, VX-8841).
+        # Extra tokens like "lot 42", "page 4", or capitalised place names must not wipe hits.
+        if self._question_has_missing_reference(query):
             return []
         self._ensure_calibrated_threshold()
         scores = self._score_documents(query, self._chunks, self._embeddings)
-        ranked_indices = np.argsort(np.asarray(scores))[::-1][: min(top_k, len(self._chunks))]
-        return [(self._chunks[int(index)], scores[int(index)]) for index in ranked_indices]
+
+        # When the question names an indexed equipment ID, restrict to passages that contain it.
+        required_ids = self._reference_ids(query)
+        if required_ids:
+            candidate_indices = self._chunks_containing_ids(self._chunks, required_ids)
+            if not candidate_indices:
+                return []
+            ranked = sorted(candidate_indices, key=lambda i: scores[i], reverse=True)
+        else:
+            ranked = list(np.argsort(np.asarray(scores))[::-1])
+
+        ranked = ranked[: min(top_k, len(ranked))]
+        return [(self._chunks[int(index)], scores[int(index)]) for index in ranked]
 
     def embedding_status(self) -> str:
         """Return a truthful description of the active retrieval backend."""
